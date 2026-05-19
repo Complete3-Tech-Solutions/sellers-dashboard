@@ -12,7 +12,8 @@ from app.db import get_session
 from app.deps import CurrentUser, get_current_user
 from app.models import MonthlyMetric, OverheadDetail, Project, QuarterlyMetric
 from app.redis_client import get_redis
-from app.schemas.dashboard import DashboardOut, YearsOut
+from app.schemas.dashboard import DashboardOut, ProjectLifetimeOut, ProjectYearRow, YearsOut
+from app.services.accounting import ACCOUNTING_MODES, DEFAULT_MODE, aggregate
 from app.settings import settings
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
@@ -52,10 +53,11 @@ async def years(
 @router.get("/dashboard", response_model=DashboardOut)
 async def dashboard(
     year: int = Query(..., ge=1900, le=2100),
+    accounting: str = Query(DEFAULT_MODE, pattern="^(raw|poc|closeout)$"),
     current: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> DashboardOut:
-    cache_key = f"dashboard:{current.tenant_id}:{year}"
+    cache_key = f"dashboard:{current.tenant_id}:{year}:{accounting}"
     r = get_redis()
     cached = await r.get(cache_key)
     if cached:
@@ -109,28 +111,6 @@ async def dashboard(
         for p in projects
     ]
 
-    monthly_out = [
-        {
-            "month": m.month,
-            "gross_profit": _num(m.gross_profit),
-            "overhead": _num(m.overhead),
-            "net_profit": _num(m.net_profit),
-        }
-        for m in monthly_rows
-    ]
-    quarterly_out = [
-        {
-            "quarter": q.quarter,
-            "sales": _num(q.sales),
-            "gross_profit": _num(q.gross_profit),
-            "gross_pct": _num(q.gross_pct),
-            "overhead": _num(q.overhead),
-            "overhead_pct": _num(q.overhead_pct),
-            "net_profit": _num(q.net_profit),
-            "net_pct": _num(q.net_pct),
-        }
-        for q in quarterly_rows
-    ]
     overhead_out = [
         {
             "month": o.month,
@@ -142,22 +122,52 @@ async def dashboard(
         for o in oh_rows
     ]
 
-    sales = sum((q["sales"] or 0) for q in quarterly_out)
-    gross = sum((q["gross_profit"] or 0) for q in quarterly_out)
-    oh = sum((q["overhead"] or 0) for q in quarterly_out)
-    net = sum((q["net_profit"] or 0) for q in quarterly_out)
-    totals = {
-        "sales": sales,
-        "gross_profit": gross,
-        "gross_pct": (gross / sales) if sales else 0,
-        "overhead": oh,
-        "overhead_pct": (oh / sales) if sales else 0,
-        "net_profit": net,
-        "net_pct": (net / sales) if sales else 0,
-    }
+    if accounting == "raw":
+        # Use what the worker precomputed (matches the customer's spreadsheet totals).
+        monthly_out = [
+            {
+                "month": m.month,
+                "gross_profit": _num(m.gross_profit),
+                "overhead": _num(m.overhead),
+                "net_profit": _num(m.net_profit),
+            }
+            for m in monthly_rows
+        ]
+        quarterly_out = [
+            {
+                "quarter": q.quarter,
+                "sales": _num(q.sales),
+                "gross_profit": _num(q.gross_profit),
+                "gross_pct": _num(q.gross_pct),
+                "overhead": _num(q.overhead),
+                "overhead_pct": _num(q.overhead_pct),
+                "net_profit": _num(q.net_profit),
+                "net_pct": _num(q.net_pct),
+            }
+            for q in quarterly_rows
+        ]
+        sales_total = sum((q["sales"] or 0) for q in quarterly_out)
+        gross = sum((q["gross_profit"] or 0) for q in quarterly_out)
+        oh_total = sum((q["overhead"] or 0) for q in quarterly_out)
+        net = sum((q["net_profit"] or 0) for q in quarterly_out)
+        totals = {
+            "sales": sales_total,
+            "gross_profit": gross,
+            "gross_pct": (gross / sales_total) if sales_total else 0,
+            "overhead": oh_total,
+            "overhead_pct": (oh_total / sales_total) if sales_total else 0,
+            "net_profit": net,
+            "net_pct": (net / sales_total) if sales_total else 0,
+        }
+    else:
+        overhead_by_month = {o.month: float(o.overhead or 0) for o in monthly_rows}
+        monthly_out, quarterly_out, totals = aggregate(
+            projects, mode=accounting, overhead_by_month=overhead_by_month
+        )
 
     out = DashboardOut(
         year=year,
+        accounting=accounting,
         projects=projects_out,
         monthly=monthly_out,
         quarterly=quarterly_out,
@@ -166,3 +176,43 @@ async def dashboard(
     )
     await r.setex(cache_key, settings.dashboard_cache_ttl_seconds, out.model_dump_json())
     return out
+
+
+@router.get("/projects/{job_no}", response_model=ProjectLifetimeOut)
+async def project_lifetime(
+    job_no: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> ProjectLifetimeOut:
+    """Every year this job_no appears in, in fiscal-year order. Lets the UI
+    show a project's trajectory across fiscal years (contract size changes,
+    %-completion progress, latest month reported)."""
+    res = await session.execute(
+        select(Project)
+        .where(Project.tenant_id == current.tenant_id, Project.job_no == job_no)
+        .order_by(Project.fiscal_year.asc())
+    )
+    rows = res.scalars().all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="job_not_found")
+    out_rows = [
+        ProjectYearRow(
+            fiscal_year=r.fiscal_year,
+            last_month=r.last_month,
+            pct_compl=_num(r.pct_compl),
+            contract=_num(r.contract),
+            cost=_num(r.cost),
+            profit=_num(r.profit),
+            profit_pct=_num(r.profit_pct),
+            invoiced=_num(r.invoiced),
+            pmt_recd=_num(r.pmt_recd),
+        )
+        for r in rows
+    ]
+    return ProjectLifetimeOut(
+        job_no=job_no,
+        name=rows[-1].name,  # latest known name
+        first_year=rows[0].fiscal_year,
+        last_year=rows[-1].fiscal_year,
+        years=out_rows,
+    )

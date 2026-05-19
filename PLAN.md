@@ -130,7 +130,13 @@ Base URL: `https://<your-railway-domain>.up.railway.app` (or your custom domain)
 ### 4.2 Dashboard endpoints (`/api`)
 
 - `GET /api/years` — `{ "years": [2013, ...], "default": 2013 }`
-- `GET /api/dashboard?year=2013` — Returns the **exact same shape** as the original embedded `DATA["2013"]` literal so the existing JS works unchanged. Cached per `(tenant_id, year)` with 60 s TTL.
+- `GET /api/dashboard?year=2013&accounting=raw|poc|closeout` — Returns the **exact same shape** as the original embedded `DATA["2013"]` literal so the existing JS works unchanged. Accepts an optional `accounting` mode:
+  - `raw` (default) — matches the customer's spreadsheet: each project contributes its full contract + profit to every year it appears. Multi-year projects double-count across years.
+  - `poc` — percentage-of-completion: contributions are scaled by `pct_compl`. A project that's 25% done counts only 25% of its contract and profit toward that year.
+  - `closeout` — only projects with `pct_compl == 1.0` count toward totals. Each project lands in exactly one year.
+
+  Project Register rows are unchanged across modes — only monthly / quarterly / totals rollups change. Cached per `(tenant_id, year, accounting)` with 60 s TTL.
+- `GET /api/projects/{job_no}` — Lifetime view of a single project across every fiscal year it appears in.
 
 ### 4.3 Ingestion endpoints (`/api/snapshot`)
 

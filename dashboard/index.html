@@ -254,6 +254,14 @@ body.has-fullscreen{overflow:hidden}
         <label for="yearSelect">Fiscal Year</label>
         <select class="year-select" id="yearSelect"></select>
       </div>
+      <div class="year-control" title="Accounting mode: Raw matches the spreadsheet (multi-year projects double-count); POC scales by % complete; Closeout only includes finished projects.">
+        <label for="accountingSelect">Accounting</label>
+        <select class="year-select" id="accountingSelect">
+          <option value="raw">Raw (spreadsheet)</option>
+          <option value="poc">% Complete</option>
+          <option value="closeout">Closeout only</option>
+        </select>
+      </div>
       <button type="button" id="exportPdfBtn" class="export-btn" title="Export full report as PDF">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Export PDF
@@ -431,6 +439,7 @@ function drawPdfDeveloperCredit(pdf, pageW, pageH, footerHeight){
 let DATA = {};
 let YEARS = [];
 let currentYear = null;
+let currentAccounting = 'raw';
 
 async function api(url, opts){
   const r = await fetch(url, Object.assign({credentials:'include'}, opts || {}));
@@ -456,7 +465,9 @@ async function fetchYears(){
 
 async function loadYear(year){
   if (year == null) return;
-  const j = await api('/api/dashboard?year=' + encodeURIComponent(year));
+  const url = '/api/dashboard?year=' + encodeURIComponent(year)
+            + '&accounting=' + encodeURIComponent(currentAccounting);
+  const j = await api(url);
   DATA[year] = j;
   currentYear = year;
   renderYear(year);
@@ -913,6 +924,12 @@ document.getElementById('searchInput').addEventListener('input', (e) => {
 
 const yearSel = document.getElementById('yearSelect');
 yearSel.addEventListener('change', () => loadYear(yearSel.value));
+
+const accSel = document.getElementById('accountingSelect');
+accSel.addEventListener('change', () => {
+  currentAccounting = accSel.value;
+  if (currentYear != null) loadYear(currentYear);
+});
 
 const today = new Date().toISOString().slice(0,10);
 document.getElementById('genDate').textContent = today;

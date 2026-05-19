@@ -244,7 +244,8 @@ sellers-dashboard/
 | `POST` | `/auth/logout` | cookie | Revoke refresh + clear cookies |
 | `GET`  | `/auth/me` | cookie | Current user + tenant |
 | `GET`  | `/api/years` | cookie | Years with data for this tenant |
-| `GET`  | `/api/dashboard?year=YYYY` | cookie | Full dashboard payload |
+| `GET`  | `/api/dashboard?year=YYYY&accounting=raw\|poc\|closeout` | cookie | Full dashboard payload (mode controls multi-year handling) |
+| `GET`  | `/api/projects/{job_no}` | cookie | Lifetime view of one project across all fiscal years |
 | `POST` | `/api/snapshot/start` | HMAC key | Begin a snapshot |
 | `POST` | `/api/snapshot/{id}/file` | HMAC key | Upload an xlsx |
 | `POST` | `/api/snapshot/{id}/commit` | HMAC key | Finalize + (parse inline or enqueue) |
@@ -260,6 +261,18 @@ sellers-dashboard/
 Agent → server requests include four extra headers: `Authorization: Bearer <key_id>.<secret>`, `X-Timestamp`, `X-Nonce`, `X-Signature` (hex HMAC-SHA256 over `METHOD\nPATH\nTIMESTAMP\nNONCE\nsha256(body)`). See [PLAN.md §5.4](PLAN.md).
 
 ---
+
+## Accounting modes
+
+The dashboard's **Accounting** dropdown (next to Fiscal Year) controls how multi-year projects roll up:
+
+| Mode | Behaviour | When to use |
+| ---- | --------- | ----------- |
+| **Raw (spreadsheet)** *(default)* | A project's full contract + profit is counted in every year it appears. Matches the customer's existing reports exactly. | Reproducing the customer's familiar numbers. |
+| **% Complete** | Contributions are scaled by `pct_compl`. A 25%-complete project counts 25% of its contract and profit toward that year. | Showing each year's earned-to-date revenue without the double-count inflation. |
+| **Closeout only** | Only projects with `pct_compl == 1.0` count toward totals. Each project lands in exactly one year — the year it finished. | Strictest accounting view; what an auditor would expect. |
+
+The mode is a query param (`?accounting=raw\|poc\|closeout`) on `/api/dashboard`, computed at request time from the stored `projects` rows — no re-parse needed. The Project Register table is unchanged across modes; only KPIs, monthly trends, quarterly cards, and totals shift.
 
 ## What's intentionally simplified for the testing deployment
 
