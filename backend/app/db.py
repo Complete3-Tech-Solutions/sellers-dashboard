@@ -24,5 +24,12 @@ async def get_session() -> AsyncIterator[AsyncSession]:
 
 
 async def set_tenant(session: AsyncSession, tenant_id: UUID) -> None:
-    """Bind the current Postgres session to a tenant so RLS policies apply."""
-    await session.execute(text("SET LOCAL app.tenant_id = :tid"), {"tid": str(tenant_id)})
+    """Bind the current Postgres session to a tenant so RLS policies apply.
+
+    Uses set_config(name, value, is_local) — PostgreSQL's `SET LOCAL var = $1`
+    does not accept bound parameters, but the function call does.
+    """
+    await session.execute(
+        text("SELECT set_config('app.tenant_id', :tid, true)"),
+        {"tid": str(tenant_id)},
+    )
