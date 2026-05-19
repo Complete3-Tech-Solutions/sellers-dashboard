@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -29,6 +30,8 @@ from app.security import (
 )
 from app.services import rate_limit, storage
 from app.settings import settings
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/snapshot", tags=["ingest"])
 
@@ -271,8 +274,10 @@ async def commit_snapshot(
         try:
             await asyncio.to_thread(parse_snapshot_job, str(snap.id))
         except Exception:
-            # parse_snapshot_job already records the error on the snapshot row.
-            pass
+            # parse_snapshot_job records its own internal exceptions on the
+            # snapshot row, but errors before its try/except (driver imports,
+            # engine creation, etc.) land here — log them so they're visible.
+            log.exception("inline parse failed for snapshot %s", snap.id)
         return CommitSnapshotOut(status="parsed", job_id=job_id)
 
     # Enqueue parser job (lazy import to avoid hard dep at startup)
