@@ -3,9 +3,8 @@ from __future__ import annotations
 import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -138,12 +137,23 @@ async def start_snapshot(
 @router.post("/{snapshot_id}/file")
 async def upload_file(
     snapshot_id: uuid.UUID,
-    filename: Annotated[str, Form()],
-    sha256: Annotated[str, Form()],
-    file: UploadFile = File(...),
+    request: Request,
     auth: AgentAuth = Depends(verify_agent),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    # Parse the multipart form ourselves so FastAPI's auto-parser doesn't
+    # drain the request stream before verify_agent (which needs the raw body
+    # to validate the HMAC signature). verify_agent has already read+cached
+    # the body via request.body(), so request.form() uses the cache.
+    form = await request.form()
+    filename = form.get("filename")
+    sha256 = form.get("sha256")
+    file = form.get("file")
+    if not isinstance(filename, str) or not isinstance(sha256, str):
+        raise HTTPException(400, "missing_form_field")
+    if not isinstance(file, UploadFile):
+        raise HTTPException(400, "missing_file")
+
     snap = await session.get(Snapshot, snapshot_id)
     if not snap or snap.tenant_id != auth.tenant_id:
         raise HTTPException(404, "snapshot_not_found")
