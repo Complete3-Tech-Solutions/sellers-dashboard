@@ -1,9 +1,13 @@
-"""Excel parser for SCC's job-cost workbooks.
+"""Excel parser for SCC's Profit Summary workbooks.
 
-The parser is deterministic and side-effect-free. It scans each workbook for a
-header row (case-insensitive match on the canonical column names), then pulls
-data rows beneath it. Currency strings are normalized to floats. Empty rows
-between sections are tolerated.
+Real-world files look like ``<year> PS SCC[ variant].xlsx`` (e.g. ``2013 PS SCC.xlsx``,
+``2015 PS SCC NEW.xlsx``, ``2016 PS SCC 7.27.16.xlsx``) and follow a stacked-monthly-blocks
+layout: one block per month (January → December), each starting with a header row
+(``JOB # | PROJECT NAME | % COMPL | CONTRACT | COST | PROFIT | %``), followed by
+project rows, a monthly-totals row, and (after Jan) a "CUMULATIVE TOT" row.
+
+Parser is deterministic and side-effect-free. It returns Python dicts that the
+worker upserts.
 """
 from __future__ import annotations
 
@@ -94,19 +98,31 @@ class ParsedSnapshot:
     totals: TotalsRow = field(default_factory=TotalsRow)
 
 
-_NUMBER_RE = re.compile(r"^-?\$?\(?[\d,]*\.?\d+\)?%?$")
+# --------------------------------------------------------------------------- #
+# Cell helpers
+# --------------------------------------------------------------------------- #
 
 
 def to_number(v: Any) -> float | None:
     if v is None or v == "":
         return None
     if isinstance(v, (int, float, Decimal)):
-        return float(v)
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        # Excel sometimes leaves NaN cells; treat as missing.
+        if f != f:  # NaN check
+            return None
+        return f
     s = str(v).strip()
     if not s or s in {"-", "—"}:
         return None
-    # Sentinel values used in the source spreadsheet (kept for backward compat with raw exports)
+    # Sentinels used in older exports
     if s.upper() in {"INVOICED", "PMT RECD"}:
+        return None
+    # Excel formula errors
+    if s.startswith("#") and s.endswith("!"):
         return None
     neg = s.startswith("(") and s.endswith(")")
     s2 = s.strip("()").replace("$", "").replace(",", "").strip()
@@ -127,7 +143,148 @@ def _norm(s: Any) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(s or "").lower())
 
 
-# Canonical header tokens we look for (normalized)
+def _year_from_filename(path: pathlib.Path) -> int | None:
+    """Extract the fiscal year from a filename like '2013 PS SCC.xlsx' or
+    'Profitability_2024.xlsx'. Returns the first 4-digit year in 19xx–20xx range."""
+    m = re.search(r"((?:19|20)\d{2})", path.name)
+    return int(m.group(1)) if m else None
+
+
+def _is_template(path: pathlib.Path) -> bool:
+    return "template" in path.name.lower()
+
+
+def _all_rows(path: pathlib.Path) -> list[list[Any]]:
+    wb = load_workbook(filename=str(path), read_only=True, data_only=True)
+    out: list[list[Any]] = []
+    for ws in wb.worksheets:
+        for row in ws.iter_rows(values_only=True):
+            out.append(list(row))
+    wb.close()
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Stacked-monthly-blocks parser (the real SCC format)
+# --------------------------------------------------------------------------- #
+
+
+def _is_header_row(row: list[Any]) -> bool:
+    """A block header has 'JOB' in col B and 'PROJECT NAME' in col C."""
+    if len(row) < 3:
+        return False
+    b = _norm(row[1])
+    c = _norm(row[2])
+    return b.startswith("job") and "projectname" in c
+
+
+def _is_cumulative_row(row: list[Any]) -> bool:
+    if len(row) < 3:
+        return False
+    return "cumulative" in _norm(row[2])
+
+
+def _is_monthly_totals_row(row: list[Any]) -> bool:
+    """A monthly-totals row: ###, JOB#, PROJECT NAME all blank; CONTRACT has a number."""
+    if len(row) < 7:
+        return False
+    a = str(row[0] or "").strip()
+    b = str(row[1] or "").strip()
+    c = str(row[2] or "").strip()
+    if a or b or c:
+        return False
+    return to_number(row[4]) is not None or to_number(row[6]) is not None
+
+
+def parse_project_list_blocks(
+    rows: list[list[Any]],
+) -> tuple[list[ProjectRow], list[MonthlyRow]]:
+    """Parse one workbook's worth of rows in the stacked-monthly-blocks layout."""
+    projects: list[ProjectRow] = []
+    monthly: list[MonthlyRow] = []
+    month_idx = -1
+    saw_header = False
+    in_block_after_totals = False
+
+    for r in rows:
+        if not r or all(c in (None, "") for c in r):
+            continue
+
+        if _is_header_row(r):
+            month_idx += 1
+            saw_header = True
+            in_block_after_totals = False
+            continue
+
+        if not saw_header:
+            continue
+
+        if _is_cumulative_row(r):
+            continue
+
+        if _is_monthly_totals_row(r):
+            if 0 <= month_idx < 12:
+                month_name = MONTHS[month_idx]
+                gp = to_number(r[6]) if len(r) > 6 else None
+                # If a later block reports a different total for the same month,
+                # last-write-wins (consistent with the file order).
+                existing = next((m for m in monthly if m.month == month_name), None)
+                if existing:
+                    existing.gross_profit = gp
+                else:
+                    monthly.append(MonthlyRow(month=month_name, gross_profit=gp))
+            in_block_after_totals = True
+            continue
+
+        # Project rows: JOB# + PROJECT NAME present; ### usually has the within-block index.
+        job_raw = r[1] if len(r) > 1 else None
+        name_raw = r[2] if len(r) > 2 else None
+        job = str(job_raw or "").strip() if job_raw not in (None, "") else ""
+        name = str(name_raw or "").strip() if name_raw not in (None, "") else ""
+        if not job or not name:
+            continue
+        if in_block_after_totals:
+            # Stray rows after the totals (e.g. cumulative cash) — skip.
+            continue
+
+        try:
+            month_name = MONTHS[month_idx] if 0 <= month_idx < 12 else None
+            contract = to_number(r[4]) if len(r) > 4 else None
+            cost = to_number(r[5]) if len(r) > 5 else None
+            profit = to_number(r[6]) if len(r) > 6 else None
+            profit_pct = to_number(r[7]) if len(r) > 7 else None
+            # Derive missing pieces (matches the original embedded dataset)
+            if profit is None and contract is not None and cost is not None:
+                profit = contract - cost
+            if (
+                profit_pct is None
+                and profit is not None
+                and contract not in (None, 0)
+            ):
+                profit_pct = profit / contract
+            projects.append(
+                ProjectRow(
+                    job_no=job,
+                    name=name,
+                    pct_compl=to_number(r[3]) if len(r) > 3 else None,
+                    contract=contract,
+                    cost=cost,
+                    profit=profit,
+                    profit_pct=profit_pct,
+                    last_month=month_name,
+                )
+            )
+        except Exception as exc:  # pragma: no cover -- defensive
+            log.warning("skipping bad project row: %s", exc)
+
+    return projects, monthly
+
+
+# --------------------------------------------------------------------------- #
+# Legacy single-header parser (kept for the dev seed / synthetic test fixtures)
+# --------------------------------------------------------------------------- #
+
+
 PROJECT_HEADERS = {
     "job": ("jobno", "job", "job#"),
     "name": ("name", "projectname", "project"),
@@ -140,12 +297,6 @@ PROJECT_HEADERS = {
     "pmt_recd": ("pmtrecd", "paymentreceived", "paid"),
     "last_month": ("lastmonth", "month"),
 }
-MONTHLY_HEADERS = {
-    "month": ("month",),
-    "gross_profit": ("grossprofit", "gross"),
-    "overhead": ("overhead",),
-    "net_profit": ("netprofit", "net"),
-}
 OVERHEAD_HEADERS = {
     "month": ("month",),
     "overhead": ("overhead",),
@@ -155,8 +306,7 @@ OVERHEAD_HEADERS = {
 }
 
 
-def _find_header(rows: list[list[Any]], schema: dict[str, tuple[str, ...]]) -> tuple[int, dict[str, int]] | None:
-    """Return (row_index, {field: col_idx}) for the first row that contains the required tokens."""
+def _find_header(rows, schema):
     required = {"job", "name"} if schema is PROJECT_HEADERS else {"month"}
     for i, row in enumerate(rows):
         normalized = [_norm(c) for c in row]
@@ -171,27 +321,23 @@ def _find_header(rows: list[list[Any]], schema: dict[str, tuple[str, ...]]) -> t
     return None
 
 
-def _year_from_filename(path: pathlib.Path) -> int | None:
-    m = re.search(r"(20\d{2})", path.name)
-    return int(m.group(1)) if m else None
-
-
-def parse_profitability(rows: list[list[Any]]) -> list[ProjectRow]:
+def parse_profitability_single_header(rows: list[list[Any]]) -> list[ProjectRow]:
     located = _find_header(rows, PROJECT_HEADERS)
     if not located:
-        log.warning("no project header found")
         return []
     start, cols = located
     out: list[ProjectRow] = []
     for r in rows[start + 1 :]:
-        job_v = r[cols["job"]] if cols.get("job") is not None and cols["job"] < len(r) else None
-        name_v = r[cols["name"]] if cols.get("name") is not None and cols["name"] < len(r) else None
-        if not job_v or not name_v:
+        if cols.get("job") is None or cols["job"] >= len(r):
+            continue
+        if cols.get("name") is None or cols["name"] >= len(r):
+            continue
+        if not r[cols["job"]] or not r[cols["name"]]:
             continue
         try:
             row = ProjectRow(
-                job_no=str(job_v).strip(),
-                name=str(name_v).strip(),
+                job_no=str(r[cols["job"]]).strip(),
+                name=str(r[cols["name"]]).strip(),
                 pct_compl=to_number(r[cols["pct_compl"]]) if "pct_compl" in cols and cols["pct_compl"] < len(r) else None,
                 contract=to_number(r[cols["contract"]]) if "contract" in cols and cols["contract"] < len(r) else None,
                 cost=to_number(r[cols["cost"]]) if "cost" in cols and cols["cost"] < len(r) else None,
@@ -201,19 +347,13 @@ def parse_profitability(rows: list[list[Any]]) -> list[ProjectRow]:
                 pmt_recd=to_number(r[cols["pmt_recd"]]) if "pmt_recd" in cols and cols["pmt_recd"] < len(r) else None,
                 last_month=str(r[cols["last_month"]]).strip() if "last_month" in cols and cols["last_month"] < len(r) and r[cols["last_month"]] else None,
             )
-            # Fill in derived fields where source omitted them
             if row.profit is None and row.contract is not None and row.cost is not None:
                 row.profit = row.contract - row.cost
-            if (
-                row.profit_pct is None
-                and row.profit is not None
-                and row.contract not in (None, 0)
-            ):
+            if row.profit_pct is None and row.profit is not None and row.contract not in (None, 0):
                 row.profit_pct = row.profit / row.contract
             out.append(row)
-        except Exception as exc:
+        except Exception as exc:  # pragma: no cover -- defensive
             log.warning("skipping bad project row: %s", exc)
-            continue
     return out
 
 
@@ -237,29 +377,45 @@ def parse_overhead(rows: list[list[Any]]) -> list[OverheadRow]:
         if total is None:
             total = (oh or 0) + (comp or 0) + (furn or 0)
         out.append(
-            OverheadRow(
-                month=month,
-                overhead=oh,
-                computers=comp,
-                furniture=furn,
-                total=total,
-            )
+            OverheadRow(month=month, overhead=oh, computers=comp, furniture=furn, total=total)
         )
     return out
 
 
+# --------------------------------------------------------------------------- #
+# File dispatch + aggregation
+# --------------------------------------------------------------------------- #
+
+
+def parse_workbook(path: pathlib.Path) -> tuple[list[ProjectRow], list[MonthlyRow]]:
+    """Parse one workbook. Tries the SCC stacked-monthly-blocks format first,
+    then falls back to the legacy single-header format used by the dev seed."""
+    rows = _all_rows(path)
+    projects, monthly = parse_project_list_blocks(rows)
+    if projects:
+        return projects, monthly
+    return parse_profitability_single_header(rows), []
+
+
 def compute_monthly_from_projects(
-    projects: list[ProjectRow], overhead: list[OverheadRow]
+    projects: list[ProjectRow],
+    overhead: list[OverheadRow],
+    block_monthly: list[MonthlyRow] | None = None,
 ) -> list[MonthlyRow]:
+    """Build the 12-month series. Prefer the totals reported in each block when
+    available; otherwise sum project profits per ``last_month``."""
     oh_by_month = {o.month: (o.total or 0) for o in overhead}
-    rows: list[MonthlyRow] = []
-    # Gross profit by month from projects (using last_month as the booked-in period)
+    block_by_month = {m.month: m for m in (block_monthly or [])}
+
     gp_by_month: dict[str, float] = {m: 0.0 for m in MONTHS}
     for p in projects:
         if p.last_month and p.last_month in gp_by_month and p.profit is not None:
             gp_by_month[p.last_month] += float(p.profit)
+
+    rows: list[MonthlyRow] = []
     for m in MONTHS:
-        gp = gp_by_month.get(m, 0.0)
+        block = block_by_month.get(m)
+        gp = float(block.gross_profit) if block and block.gross_profit is not None else gp_by_month[m]
         oh = oh_by_month.get(m, 0.0)
         rows.append(MonthlyRow(month=m, gross_profit=gp, overhead=oh, net_profit=gp - oh))
     return rows
@@ -269,17 +425,12 @@ def compute_quarterly_from_projects(
     projects: list[ProjectRow], monthly: list[MonthlyRow]
 ) -> list[QuarterlyRow]:
     monthly_by = {m.month: m for m in monthly}
-
-    # Sales = sum of contracts whose last_month falls in that quarter (matches the source dashboard's
-    # rollup of "revenue booked in that period"). If your shop accounts differently, adjust here.
     sales_by_q: dict[str, float] = {"Q1": 0, "Q2": 0, "Q3": 0, "Q4": 0}
     gp_by_q = {"Q1": 0.0, "Q2": 0.0, "Q3": 0.0, "Q4": 0.0}
     oh_by_q = {"Q1": 0.0, "Q2": 0.0, "Q3": 0.0, "Q4": 0.0}
     for p in projects:
-        if p.last_month and p.last_month in MONTH_TO_Q:
-            q = MONTH_TO_Q[p.last_month]
-            if p.contract is not None:
-                sales_by_q[q] += float(p.contract)
+        if p.last_month and p.last_month in MONTH_TO_Q and p.contract is not None:
+            sales_by_q[MONTH_TO_Q[p.last_month]] += float(p.contract)
     for m in MONTHS:
         q = MONTH_TO_Q[m]
         mrow = monthly_by.get(m)
@@ -295,14 +446,10 @@ def compute_quarterly_from_projects(
         net = gp - oh
         rows.append(
             QuarterlyRow(
-                quarter=q,
-                sales=sales,
-                gross_profit=gp,
+                quarter=q, sales=sales, gross_profit=gp,
                 gross_pct=(gp / sales) if sales else 0,
-                overhead=oh,
-                overhead_pct=(oh / sales) if sales else 0,
-                net_profit=net,
-                net_pct=(net / sales) if sales else 0,
+                overhead=oh, overhead_pct=(oh / sales) if sales else 0,
+                net_profit=net, net_pct=(net / sales) if sales else 0,
             )
         )
     return rows
@@ -314,57 +461,87 @@ def compute_totals(quarterly: list[QuarterlyRow]) -> TotalsRow:
     oh = sum((q.overhead or 0) for q in quarterly)
     net = gp - oh
     return TotalsRow(
-        sales=sales,
-        gross_profit=gp,
+        sales=sales, gross_profit=gp,
         gross_pct=(gp / sales) if sales else 0,
-        overhead=oh,
-        overhead_pct=(oh / sales) if sales else 0,
-        net_profit=net,
-        net_pct=(net / sales) if sales else 0,
+        overhead=oh, overhead_pct=(oh / sales) if sales else 0,
+        net_profit=net, net_pct=(net / sales) if sales else 0,
     )
 
 
-def _all_rows(path: pathlib.Path) -> list[list[Any]]:
-    wb = load_workbook(filename=str(path), read_only=True, data_only=True)
-    out: list[list[Any]] = []
-    for ws in wb.worksheets:
-        for row in ws.iter_rows(values_only=True):
-            out.append(list(row))
-    wb.close()
-    return out
+def _dedupe_projects(projects: list[ProjectRow]) -> list[ProjectRow]:
+    """Multiple files for the same year (e.g. '2015 PS SCC' + '2015 PS SCC NEW')
+    contribute overlapping job rows. Keep the LAST occurrence for each job_no."""
+    seen: dict[str, int] = {}
+    for i, p in enumerate(projects):
+        seen[p.job_no] = i
+    return [projects[i] for i in sorted(seen.values())]
 
 
-def parse_folder(folder: pathlib.Path) -> ParsedSnapshot:
-    """Parse all .xlsx files in `folder`. Year is inferred from filenames."""
-    fy: int | None = None
-    project_files: list[pathlib.Path] = []
-    overhead_files: list[pathlib.Path] = []
+def parse_files_for_year(files: list[pathlib.Path], fiscal_year: int) -> ParsedSnapshot:
+    """Parse one or more workbooks that all belong to the same fiscal year.
 
-    for p in sorted(folder.glob("*.xlsx")):
-        if p.name.startswith("~$"):
+    When multiple files map to the same year (e.g. ``2015 PS SCC.xlsx`` +
+    ``2015 PS SCC NEW.xlsx``), they're processed in order of modification time
+    (oldest first), so the newest file's data wins on duplicate job numbers.
+    """
+    files = sorted(files, key=lambda p: p.stat().st_mtime)
+    snap = ParsedSnapshot(fiscal_year=fiscal_year)
+    block_monthly: list[MonthlyRow] = []
+    for path in files:
+        if _is_template(path):
+            log.info("skipping template file %s", path.name)
             continue
-        lower = p.name.lower()
-        if fy is None:
-            fy = _year_from_filename(p)
-        if "overhead" in lower:
-            overhead_files.append(p)
-        else:
-            project_files.append(p)
+        try:
+            projects, monthly = parse_workbook(path)
+        except Exception:
+            log.exception("failed to parse %s", path.name)
+            continue
+        snap.projects.extend(projects)
+        # Block-reported monthly totals: later file wins.
+        by_m = {m.month: m for m in block_monthly}
+        for m in monthly:
+            by_m[m.month] = m
+        block_monthly = list(by_m.values())
 
-    if fy is None:
-        from datetime import date
-
-        fy = date.today().year
-
-    snap = ParsedSnapshot(fiscal_year=fy)
-    for pf in project_files:
-        rows = _all_rows(pf)
-        snap.projects.extend(parse_profitability(rows))
-    for of in overhead_files:
-        rows = _all_rows(of)
-        snap.overhead_detail.extend(parse_overhead(rows))
-
-    snap.monthly = compute_monthly_from_projects(snap.projects, snap.overhead_detail)
+    snap.projects = _dedupe_projects(snap.projects)
+    snap.monthly = compute_monthly_from_projects(
+        snap.projects, snap.overhead_detail, block_monthly=block_monthly
+    )
     snap.quarterly = compute_quarterly_from_projects(snap.projects, snap.monthly)
     snap.totals = compute_totals(snap.quarterly)
     return snap
+
+
+def parse_folder(folder: pathlib.Path) -> ParsedSnapshot:
+    """Parse all xlsx files in ``folder`` into a single ParsedSnapshot. The
+    fiscal year is taken from the filenames; if the folder contains multiple
+    years, the most recent year wins (the dashboard renders one year at a time).
+
+    The RQ worker calls this with a tempdir of files from one snapshot, which
+    in normal operation contains files for a single year. Multi-year folders
+    are supported but produce only the latest year's data.
+    """
+    by_year: dict[int, list[pathlib.Path]] = {}
+    fallback: list[pathlib.Path] = []
+    for p in sorted(folder.glob("*.xlsx")) + sorted(folder.glob("*.xlsm")):
+        if p.name.startswith("~$"):
+            continue
+        if _is_template(p):
+            continue
+        yr = _year_from_filename(p)
+        if yr is None:
+            fallback.append(p)
+            continue
+        by_year.setdefault(yr, []).append(p)
+
+    if not by_year:
+        if not fallback:
+            return ParsedSnapshot(fiscal_year=0)
+        # No year in any filename → use this year as best-effort.
+        from datetime import date
+        return parse_files_for_year(fallback, date.today().year)
+
+    # When a snapshot contains multiple years, pick the latest year. The agent
+    # in steady state only ships files whose year matches the year that changed.
+    year = max(by_year)
+    return parse_files_for_year(by_year[year], year)

@@ -18,10 +18,35 @@ A small Windows service watches the folder where your job-cost Excel files live 
 
    ```powershell
    cd 'C:\Program Files\SCCAgent'
-   .\install.ps1 -ApiKey "scc_live_xxxxxxx.yyyyyyyyyy" -WatchFolder "C:\SCC\Reports"
+   # Local path:
+   .\install.ps1 -ApiKey "scc_live_xxx.yyy" -WatchFolder "C:\SCC\Reports"
+   # Or a UNC path to a network share:
+   .\install.ps1 -ApiKey "scc_live_xxx.yyy" -WatchFolder "\\sgc-fs01\Company Files\Profit Summaries"
    ```
 
 5. You should see `SCCAgent installed and started.` The service is now running and will restart automatically on reboot.
+
+## File naming convention
+
+The agent uploads any `.xlsx` / `.xlsm` it sees in the watch folder, with two exceptions:
+
+- Excel lock files (`~$*.xlsx`) and temp files (`*.tmp`) are skipped.
+- Any filename containing **`template`** (case-insensitive) is skipped — those are layout references, not data. E.g. `Profit_Summary_Template.xlsx` will stay local.
+
+The fiscal year for each uploaded file is extracted from the first 4-digit year in the filename. The customer's standard naming `<year> PS SCC.xlsx` works as-is:
+
+```
+\\sgc-fs01\Company Files\Profit Summaries\
+├── 2013 PS SCC.xlsx                  → fiscal year 2013
+├── 2014 PS SCC.xlsx                  → fiscal year 2014
+├── 2015 PS SCC.xlsx                  → fiscal year 2015 (older revision)
+├── 2015 PS SCC NEW.xlsx              → fiscal year 2015 (overrides the older one)
+├── 2016 PS SCC - 4.22.16.xlsx        → fiscal year 2016 (older revision)
+├── 2016 PS SCC 7.27.16.xlsx          → fiscal year 2016 (latest)
+└── Profit_Summary_Template.xlsx      → SKIPPED (template)
+```
+
+When more than one file maps to the same year, the parser processes them in modification-time order and the newest one wins on overlapping job numbers.
 
 ## Verify it's working
 

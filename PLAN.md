@@ -194,15 +194,47 @@ Server verifies: key lookup → IP allowlist → secret hash → timestamp windo
 
 ## 6. Excel parser
 
-Reads SCC's spreadsheet format ([backend/app/services/parser.py](backend/app/services/parser.py)).
+Reads SCC's "Profit Summary" workbooks ([backend/app/services/parser.py](backend/app/services/parser.py)).
+
+### Real-world file layout
+
+Customer files live on a network share, e.g. `\\sgc-fs01\Company Files\Profit Summaries\`, named:
+
+| Filename | Year | Notes |
+| -------- | ---- | ----- |
+| `2013 PS SCC.xlsx` | 2013 | One file per year |
+| `2015 PS SCC.xlsx` + `2015 PS SCC NEW.xlsx` | 2015 | Two revisions — newer mtime wins on overlapping job #s |
+| `2016 PS SCC - 4.22.16.xlsx` + `2016 PS SCC 7.27.16.xlsx` | 2016 | Same idea |
+| `Profit_Summary_Template.xlsx` | — | Layout template, skipped by agent + parser |
+
+Each workbook has a single sheet with **12 stacked monthly blocks** (Jan → Dec):
+
+```
+###  | JOB #  | PROJECT NAME            | % COMPL | CONTRACT | COST | PROFIT | %    ← header
+1    | 323    | Shelby West - AGC       | 0.5     | 116825   | 91998 | 24827  | 21%
+2    | 419    | POB 110 Renovation      | 1       | 18231    | 11625 | 6606   | 36%
+...                                                                                  ← project rows
+     |        |                         |         | 187760   | 140350 | 47410 |     ← month totals (Jan)
+     |        | CUMULATIVE TOT          |         | ...                              ← cumulative (skipped)
+###  | JOB #  | PROJECT NAME            | ...                                       ← next month header (Feb)
+```
+
+Columns past `%` (col H) carry secondary data the dashboard doesn't use (`Est. Profit`, `QB`, `$$$`, `CTC`, `OPEN PO`) — parser ignores them.
+
+### Implementation
 
 - Uses `openpyxl` read-only, `data_only=True` (reads formula results, not formulas).
-- Scans for header row containing `Job #` (case-insensitive).
-- Currency parsing strips `$`, `,`, `(...)` → negative.
-- Skips blank rows; warns + continues on bad rows.
-- Computes monthly/quarterly/totals from row data (doesn't trust precomputed cells).
+- Detects month boundaries by header rows (col B = `JOB #`, col C = `PROJECT NAME`).
+- Assigns each project's `last_month` from its containing block's position (0–11 → January–December).
+- Reads each block's monthly-totals row (blank ID + numeric CONTRACT/PROFIT) and uses it as `monthly[].gross_profit`. Falls back to summing project profits per month when the totals row is missing.
+- Skips "CUMULATIVE TOT" rows.
+- Currency parsing strips `$`, `,`, `(...)` → negative. Treats `#DIV/0!`/`#REF!`/`INVOICED`/`PMT RECD` sentinels as null.
+- Dedupes by `job_no` when multiple files for the same year are in one snapshot — last (by mtime) wins.
+- `invoiced` and `pmt_recd` are not present in the Profit Summary file format; they remain `null` until a separate invoicing source is added.
+- Overhead data is similarly absent — `overhead` defaults to `0` per month so `net_profit == gross_profit` for the testing tier.
 
-Worker (`backend/app/workers/parse_snapshot.py`):
+### Worker (`backend/app/workers/parse_snapshot.py`)
+
 1. Loads committed snapshot.
 2. Downloads files from object storage to tempdir.
 3. Parses with `parser.parse_folder`.

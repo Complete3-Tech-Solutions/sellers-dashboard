@@ -105,14 +105,21 @@ pip install -e ".[dev]"
 $pd = "$env:PROGRAMDATA\SCCAgent"
 New-Item -ItemType Directory -Force -Path $pd | Out-Null
 
+# Point watch_folder at the customer's actual Profit Summaries folder.
+# The agent supports UNC paths (network shares) as well as local paths.
 @"
 api_base_url  = "https://<your-railway-domain>.up.railway.app"
-watch_folder  = "C:\path\to\your\excel\folder"
+watch_folder  = "\\sgc-fs01\Company Files\Profit Summaries"
 debounce_secs = 8
 poll_interval = 30
 log_level     = "INFO"
 "@ | Set-Content -Encoding utf8 "$pd\config.toml"
 ```
+
+The agent looks for `.xlsx` / `.xlsm` files matching the customer's standard
+`<year> PS SCC.xlsx` naming (e.g. `2013 PS SCC.xlsx`, `2024 PS SCC.xlsx`). Files
+with **`template`** in the name (e.g. `Profit_Summary_Template.xlsx`) are skipped
+both client-side and server-side.
 
 Issue an API key in the dashboard (sign in as admin → **the admin endpoints work via API today**; a UI is on the roadmap):
 

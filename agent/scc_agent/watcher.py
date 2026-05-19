@@ -18,10 +18,19 @@ def _is_excel_temp(name: str) -> bool:
     return name.startswith("~$") or name.endswith((".tmp", "~"))
 
 
+def _is_template(name: str) -> bool:
+    """Customer folders often contain a 'Profit_Summary_Template.xlsx' next to
+    the year files. The template has no real data — don't ship it."""
+    return "template" in name.lower()
+
+
 def list_xlsx(folder: pathlib.Path) -> list[pathlib.Path]:
     return sorted(
         p for p in folder.iterdir()
-        if p.is_file() and p.suffix.lower() in XLSX_EXTS and not _is_excel_temp(p.name)
+        if p.is_file()
+        and p.suffix.lower() in XLSX_EXTS
+        and not _is_excel_temp(p.name)
+        and not _is_template(p.name)
     )
 
 
@@ -70,7 +79,7 @@ class FolderWatcher:
                 if event.is_directory:
                     return
                 name = os.path.basename(event.src_path)
-                if _is_excel_temp(name):
+                if _is_excel_temp(name) or _is_template(name):
                     return
                 if not name.lower().endswith(XLSX_EXTS):
                     return
