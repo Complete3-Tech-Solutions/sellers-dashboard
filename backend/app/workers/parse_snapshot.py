@@ -58,99 +58,83 @@ def parse_snapshot_job(snapshot_id_str: str) -> dict:
             with tempfile.TemporaryDirectory(prefix="scc-parse-") as td:
                 tmpdir = pathlib.Path(td)
                 _download_to(tmpdir, files)
-                parsed = parser_mod.parse_folder(tmpdir)
 
+                # Snapshots can carry files for multiple years (typical for the
+                # first backfill upload). Parse and apply each year independently.
+                parsed_years = parser_mod.parse_folder_all_years(tmpdir)
                 tenant_id = snap.tenant_id
-                year = parsed.fiscal_year
+                total_projects = 0
+                applied_years: list[int] = []
 
-                # Replace year's data atomically
-                session.execute(
-                    delete(Project).where(
-                        Project.tenant_id == tenant_id, Project.fiscal_year == year
-                    )
-                )
-                session.execute(
-                    delete(MonthlyMetric).where(
-                        MonthlyMetric.tenant_id == tenant_id,
-                        MonthlyMetric.fiscal_year == year,
-                    )
-                )
-                session.execute(
-                    delete(QuarterlyMetric).where(
-                        QuarterlyMetric.tenant_id == tenant_id,
-                        QuarterlyMetric.fiscal_year == year,
-                    )
-                )
-                session.execute(
-                    delete(OverheadDetail).where(
-                        OverheadDetail.tenant_id == tenant_id,
-                        OverheadDetail.fiscal_year == year,
-                    )
-                )
+                for parsed in parsed_years:
+                    year = parsed.fiscal_year
+                    if not parsed.projects and not parsed.monthly:
+                        log.info("year %s: no data, skipping", year)
+                        continue
 
-                session.add_all(
-                    [
+                    session.execute(
+                        delete(Project).where(
+                            Project.tenant_id == tenant_id, Project.fiscal_year == year
+                        )
+                    )
+                    session.execute(
+                        delete(MonthlyMetric).where(
+                            MonthlyMetric.tenant_id == tenant_id,
+                            MonthlyMetric.fiscal_year == year,
+                        )
+                    )
+                    session.execute(
+                        delete(QuarterlyMetric).where(
+                            QuarterlyMetric.tenant_id == tenant_id,
+                            QuarterlyMetric.fiscal_year == year,
+                        )
+                    )
+                    session.execute(
+                        delete(OverheadDetail).where(
+                            OverheadDetail.tenant_id == tenant_id,
+                            OverheadDetail.fiscal_year == year,
+                        )
+                    )
+
+                    session.add_all(
                         Project(
-                            tenant_id=tenant_id,
-                            fiscal_year=year,
-                            job_no=p.job_no,
-                            name=p.name,
-                            pct_compl=p.pct_compl,
-                            contract=p.contract,
-                            cost=p.cost,
-                            profit=p.profit,
-                            profit_pct=p.profit_pct,
-                            invoiced=p.invoiced,
-                            pmt_recd=p.pmt_recd,
+                            tenant_id=tenant_id, fiscal_year=year,
+                            job_no=p.job_no, name=p.name,
+                            pct_compl=p.pct_compl, contract=p.contract,
+                            cost=p.cost, profit=p.profit, profit_pct=p.profit_pct,
+                            invoiced=p.invoiced, pmt_recd=p.pmt_recd,
                             last_month=p.last_month,
                         )
                         for p in parsed.projects
-                    ]
-                )
-                session.add_all(
-                    [
+                    )
+                    session.add_all(
                         MonthlyMetric(
-                            tenant_id=tenant_id,
-                            fiscal_year=year,
-                            month=m.month,
-                            gross_profit=m.gross_profit,
-                            overhead=m.overhead,
+                            tenant_id=tenant_id, fiscal_year=year, month=m.month,
+                            gross_profit=m.gross_profit, overhead=m.overhead,
                             net_profit=m.net_profit,
                         )
                         for m in parsed.monthly
-                    ]
-                )
-                session.add_all(
-                    [
+                    )
+                    session.add_all(
                         QuarterlyMetric(
-                            tenant_id=tenant_id,
-                            fiscal_year=year,
-                            quarter=q.quarter,
-                            sales=q.sales,
-                            gross_profit=q.gross_profit,
-                            gross_pct=q.gross_pct,
-                            overhead=q.overhead,
-                            overhead_pct=q.overhead_pct,
-                            net_profit=q.net_profit,
+                            tenant_id=tenant_id, fiscal_year=year, quarter=q.quarter,
+                            sales=q.sales, gross_profit=q.gross_profit,
+                            gross_pct=q.gross_pct, overhead=q.overhead,
+                            overhead_pct=q.overhead_pct, net_profit=q.net_profit,
                             net_pct=q.net_pct,
                         )
                         for q in parsed.quarterly
-                    ]
-                )
-                session.add_all(
-                    [
+                    )
+                    session.add_all(
                         OverheadDetail(
-                            tenant_id=tenant_id,
-                            fiscal_year=year,
-                            month=o.month,
-                            overhead=o.overhead,
-                            computers=o.computers,
-                            furniture=o.furniture,
-                            total=o.total,
+                            tenant_id=tenant_id, fiscal_year=year, month=o.month,
+                            overhead=o.overhead, computers=o.computers,
+                            furniture=o.furniture, total=o.total,
                         )
                         for o in parsed.overhead_detail
-                    ]
-                )
+                    )
+                    total_projects += len(parsed.projects)
+                    applied_years.append(year)
 
                 snap.status = "parsed"
                 snap.parsed_at = datetime.now(tz=timezone.utc)
@@ -167,7 +151,11 @@ def parse_snapshot_job(snapshot_id_str: str) -> dict:
                 except Exception:
                     pass
 
-                return {"ok": True, "year": year, "projects": len(parsed.projects)}
+                return {
+                    "ok": True,
+                    "years": applied_years,
+                    "projects": total_projects,
+                }
 
         except Exception as exc:
             log.exception("parse failed")

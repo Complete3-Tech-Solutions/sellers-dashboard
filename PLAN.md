@@ -237,9 +237,9 @@ Columns past `%` (col H) carry secondary data the dashboard doesn't use (`Est. P
 
 1. Loads committed snapshot.
 2. Downloads files from object storage to tempdir.
-3. Parses with `parser.parse_folder`.
-4. In a transaction: deletes existing year data, inserts fresh rows.
-5. Invalidates dashboard cache.
+3. Calls `parser.parse_folder_all_years()` — returns one `ParsedSnapshot` per fiscal year present in the snapshot. The first agent run typically uploads ~17 files (one per year, 2010–2026), so the worker must apply each year independently rather than picking just one.
+4. For each year: deletes existing year data, inserts fresh rows.
+5. Invalidates dashboard cache (all keys under `dashboard:<tenant_id>:*`).
 6. On failure: marks snapshot `failed`, records error message.
 
 When `PARSER_INLINE=true` (default for single-service deploys), the commit endpoint runs the worker synchronously.

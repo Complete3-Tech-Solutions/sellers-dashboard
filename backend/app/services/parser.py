@@ -512,15 +512,7 @@ def parse_files_for_year(files: list[pathlib.Path], fiscal_year: int) -> ParsedS
     return snap
 
 
-def parse_folder(folder: pathlib.Path) -> ParsedSnapshot:
-    """Parse all xlsx files in ``folder`` into a single ParsedSnapshot. The
-    fiscal year is taken from the filenames; if the folder contains multiple
-    years, the most recent year wins (the dashboard renders one year at a time).
-
-    The RQ worker calls this with a tempdir of files from one snapshot, which
-    in normal operation contains files for a single year. Multi-year folders
-    are supported but produce only the latest year's data.
-    """
+def _group_by_year(folder: pathlib.Path) -> tuple[dict[int, list[pathlib.Path]], list[pathlib.Path]]:
     by_year: dict[int, list[pathlib.Path]] = {}
     fallback: list[pathlib.Path] = []
     for p in sorted(folder.glob("*.xlsx")) + sorted(folder.glob("*.xlsm")):
@@ -531,17 +523,35 @@ def parse_folder(folder: pathlib.Path) -> ParsedSnapshot:
         yr = _year_from_filename(p)
         if yr is None:
             fallback.append(p)
-            continue
-        by_year.setdefault(yr, []).append(p)
+        else:
+            by_year.setdefault(yr, []).append(p)
+    return by_year, fallback
 
+
+def parse_folder_all_years(folder: pathlib.Path) -> list[ParsedSnapshot]:
+    """Parse every year present in ``folder`` and return one ParsedSnapshot per
+    year. Used by the worker so a backfill snapshot containing 17 years of
+    files (the typical first upload) produces 17 years of dashboard data.
+    """
+    by_year, fallback = _group_by_year(folder)
+    out: list[ParsedSnapshot] = []
+    for year in sorted(by_year):
+        out.append(parse_files_for_year(by_year[year], year))
+    if fallback:
+        from datetime import date
+        out.append(parse_files_for_year(fallback, date.today().year))
+    return out
+
+
+def parse_folder(folder: pathlib.Path) -> ParsedSnapshot:
+    """Single-year convenience for callers that only need one ParsedSnapshot
+    (the dev seed, the test suite, ad-hoc scripts). Picks the latest year
+    present in the folder. The RQ worker uses ``parse_folder_all_years``."""
+    by_year, fallback = _group_by_year(folder)
     if not by_year:
         if not fallback:
             return ParsedSnapshot(fiscal_year=0)
-        # No year in any filename → use this year as best-effort.
         from datetime import date
         return parse_files_for_year(fallback, date.today().year)
-
-    # When a snapshot contains multiple years, pick the latest year. The agent
-    # in steady state only ships files whose year matches the year that changed.
     year = max(by_year)
     return parse_files_for_year(by_year[year], year)

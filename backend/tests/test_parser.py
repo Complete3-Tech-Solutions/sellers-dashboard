@@ -115,6 +115,18 @@ def test_template_file_is_skipped(tmp_path: pathlib.Path):
     assert snap.projects == []
 
 
+def test_parse_folder_all_years(tmp_path: pathlib.Path):
+    """Backfill: a snapshot with files for several years yields one ParsedSnapshot per year."""
+    _write_ps_workbook(tmp_path, 2022)
+    _write_ps_workbook(tmp_path, 2023)
+    _write_ps_workbook(tmp_path, 2024)
+    results = parser.parse_folder_all_years(tmp_path)
+    years = sorted(r.fiscal_year for r in results)
+    assert years == [2022, 2023, 2024]
+    for r in results:
+        assert len(r.projects) == 3  # each fixture has 3 projects across 2 months
+
+
 def test_year_extraction_from_real_naming():
     assert parser._year_from_filename(pathlib.Path("2013 PS SCC.xlsx")) == 2013
     assert parser._year_from_filename(pathlib.Path("2015 PS SCC NEW.xlsx")) == 2015
