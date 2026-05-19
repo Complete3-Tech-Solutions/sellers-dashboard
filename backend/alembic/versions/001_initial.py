@@ -18,14 +18,16 @@ branch_labels = None
 depends_on = None
 
 
+# Tables that have a `tenant_id` column directly — straightforward RLS policy.
 RLS_TABLES = (
     "projects",
     "monthly_metrics",
     "quarterly_metrics",
     "overhead_detail",
     "snapshots",
-    "snapshot_files",
 )
+# `snapshot_files` doesn't carry tenant_id directly — it's protected via its
+# parent snapshot row. Handled separately in upgrade()/downgrade().
 
 
 def upgrade() -> None:
@@ -181,7 +183,7 @@ def upgrade() -> None:
     op.create_index("ix_projects_tenant_year", "projects", ["tenant_id", "fiscal_year"])
     op.create_index("ix_snapshots_tenant_started", "snapshots", ["tenant_id", sa.text("started_at DESC")])
 
-    # Row-level security
+    # Row-level security: tables that carry tenant_id directly.
     for table in RLS_TABLES:
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
         op.execute(
@@ -192,8 +194,30 @@ def upgrade() -> None:
             """
         )
 
+    # snapshot_files inherits tenant scoping from its parent snapshot row.
+    op.execute("ALTER TABLE snapshot_files ENABLE ROW LEVEL SECURITY")
+    op.execute(
+        """
+        CREATE POLICY tenant_isolation ON snapshot_files
+            USING (
+                snapshot_id IN (
+                    SELECT id FROM snapshots
+                    WHERE tenant_id = current_setting('app.tenant_id', true)::uuid
+                )
+            )
+            WITH CHECK (
+                snapshot_id IN (
+                    SELECT id FROM snapshots
+                    WHERE tenant_id = current_setting('app.tenant_id', true)::uuid
+                )
+            )
+        """
+    )
+
 
 def downgrade() -> None:
+    op.execute("DROP POLICY IF EXISTS tenant_isolation ON snapshot_files")
+    op.execute("ALTER TABLE snapshot_files DISABLE ROW LEVEL SECURITY")
     for table in RLS_TABLES:
         op.execute(f"DROP POLICY IF EXISTS tenant_isolation ON {table}")
         op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")
