@@ -1,0 +1,9 @@
+agent/
+dashboard/README.md
+docs/
+.github/
+PLAN.md
+SCC_Profitability_Dashboard2.html
+docker-compose.yml
+*.md
+!README.md

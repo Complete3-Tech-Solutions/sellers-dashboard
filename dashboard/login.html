@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign in · SCC Profitability</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#1b1b1b; --base-dark:#565c65; --base-lighter:#dfe1e2; --off-white:#f9f9f9;
+  --primary-darker:#162e51; --primary:#005ea2; --primary-dark:#1a4480;
+  --primary-lighter:#d9e8f6; --error:#d83933; --error-lighter:#f3e1e4;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px}
+body{
+  font-family:'Source Sans 3','Helvetica Neue',Helvetica,Arial,sans-serif;
+  background:var(--off-white); color:var(--ink);
+  min-height:100vh; display:flex; align-items:center; justify-content:center;
+  -webkit-font-smoothing:antialiased;
+}
+.top-strip{background:var(--primary-darker);color:#fff;padding:8px 0;font-size:12px;position:fixed;top:0;left:0;right:0;text-align:center}
+.card{
+  width:100%; max-width:420px; background:#fff;
+  border:1px solid var(--base-lighter); padding:32px 36px 30px;
+  box-shadow:0 2px 8px rgba(22,46,81,0.05);
+}
+.brand{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.brand img{height:42px;max-width:160px;object-fit:contain}
+.brand .text{font-size:13px;color:var(--base-dark);line-height:1.2}
+.brand .text strong{display:block;font-size:15px;color:var(--ink)}
+h1{font-size:22px;font-weight:700;margin:6px 0 4px;color:var(--primary-darker)}
+.sub{font-size:13px;color:var(--base-dark);margin-bottom:22px}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.field label{font-size:13px;font-weight:600;color:var(--ink)}
+.field input{
+  font-family:inherit; font-size:15px;
+  border:1px solid var(--base-dark); padding:9px 12px;
+  background:#fff; color:var(--ink); outline:none;
+}
+.field input:focus{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-lighter)}
+.actions{display:flex;align-items:center;justify-content:flex-end;margin-top:8px}
+button[type="submit"]{
+  background:var(--primary); color:#fff; border:1px solid var(--primary);
+  font-family:inherit; font-size:15px; font-weight:600;
+  padding:9px 18px; cursor:pointer; outline:none;
+  transition:background .15s;
+}
+button[type="submit"]:hover{background:var(--primary-dark)}
+button[type="submit"]:disabled{opacity:.6;cursor:wait}
+.error{
+  background:var(--error-lighter); border:1px solid var(--error);
+  color:var(--error); padding:9px 12px; font-size:13px;
+  margin-bottom:14px; display:none;
+}
+.foot{margin-top:22px;font-size:12px;color:var(--base-dark);text-align:center}
+.foot a{color:var(--primary);text-decoration:none}
+.foot a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="top-strip">SCC Profitability Reporting · Authorized users only</div>
+<main class="card" role="main">
+  <div class="brand">
+    <img src="/tenant-logo.png" alt="" onerror="this.onerror=null;this.src='/assets/scc.png'">
+    <div class="text"><strong>Profitability</strong>Project Reporting</div>
+  </div>
+  <h1>Sign in</h1>
+  <p class="sub">Enter your credentials to view the dashboard.</p>
+  <div class="error" id="err" role="alert"></div>
+  <form id="loginForm" novalidate>
+    <div class="field">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" required autocomplete="email" autofocus>
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" required autocomplete="current-password">
+    </div>
+    <div class="field">
+      <label for="totp">Two-factor code <span style="font-weight:400;color:var(--base-dark)">(if enabled)</span></label>
+      <input id="totp" name="totp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code">
+    </div>
+    <div class="actions">
+      <button type="submit" id="submitBtn">Sign in</button>
+    </div>
+  </form>
+  <div class="foot">Need an account? Ask your administrator.</div>
+</main>
+<script>
+const form = document.getElementById('loginForm');
+const err = document.getElementById('err');
+const btn = document.getElementById('submitBtn');
+
+function showError(msg){ err.textContent = msg; err.style.display = 'block'; }
+function clearError(){ err.style.display = 'none'; err.textContent = ''; }
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearError();
+  btn.disabled = true;
+  const body = {
+    email: document.getElementById('email').value.trim(),
+    password: document.getElementById('password').value,
+  };
+  const totp = document.getElementById('totp').value.trim();
+  if (totp) body.totp = totp;
+  try {
+    const r = await fetch('/auth/login', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (r.ok) {
+      window.location = '/';
+      return;
+    }
+    let detail = 'invalid_credentials';
+    try { detail = (await r.json()).detail || detail; } catch (_) {}
+    if (detail === 'totp_required') showError('Two-factor code is required.');
+    else if (detail === 'rate_limited') showError('Too many attempts. Try again in a minute.');
+    else showError('Email or password is incorrect.');
+  } catch (e) {
+    showError('Network error. Please try again.');
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SCC Project Profitability Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;600;700&family=Roboto+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+:root{
+  --ink: #1b1b1b;
+  --base-darker: #3d4551;
+  --base-dark: #565c65;
+  --base: #71767a;
+  --base-light: #a9aeb1;
+  --base-lighter: #dfe1e2;
+  --base-lightest: #f0f0f0;
+  --white: #ffffff;
+  --off-white: #f9f9f9;
+  --primary-darker: #162e51;
+  --primary-dark: #1a4480;
+  --primary: #005ea2;
+  --primary-vivid: #0050d8;
+  --primary-light: #73b3e7;
+  --primary-lighter: #d9e8f6;
+  --primary-lightest: #eff6fb;
+  --success: #00a91c;
+  --success-dark: #216e1f;
+  --success-lighter: #ecf3ec;
+  --warning: #e5a000;
+  --warning-dark: #936f38;
+  --warning-lighter: #faf3d1;
+  --error: #d83933;
+  --error-dark: #b50909;
+  --error-lighter: #f3e1e4;
+  --info: #009ec1;
+  --info-lighter: #e7f6f8;
+  --accent-warm: #c05600;
+  --accent-cool: #07648d;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px}
+body{
+  font-family:'Source Sans 3','Source Sans Pro','Helvetica Neue',Helvetica,Arial,sans-serif;
+  background:var(--off-white);color:var(--ink);line-height:1.5;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+}
+.top-strip{background:var(--primary-darker);color:var(--white);padding:6px 0;font-size:13px}
+.top-strip-inner{max-width:1500px;margin:0 auto;padding:0 28px;display:flex;align-items:center;gap:10px}
+.top-strip-flag{width:16px;height:11px;background:var(--white);display:inline-flex;align-items:center;justify-content:center;font-size:8px;color:var(--primary-darker);font-weight:700}
+.top-strip-text{font-size:12px;color:var(--primary-lighter)}
+.live-indicator{margin-left:auto;display:inline-flex;align-items:center;gap:7px;font-family:'Roboto Mono',monospace;font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#ffffff;padding:2px 10px 2px 8px;border:1px solid rgba(0,232,90,0.45);border-radius:999px;background:rgba(0,232,90,0.08)}
+.live-dot{width:8px;height:8px;border-radius:50%;background:#00e85a;animation:live-pulse 1.8s ease-in-out infinite;flex-shrink:0}
+@keyframes live-pulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(0,232,90,0.65),0 0 4px rgba(0,232,90,0.9);transform:scale(1)}
+  50%{box-shadow:0 0 0 6px rgba(0,232,90,0),0 0 11px rgba(0,232,90,1);transform:scale(1.18)}
+}
+.masthead{background:var(--white);border-bottom:1px solid var(--base-lighter);padding:18px 0}
+.masthead-inner{max-width:1500px;margin:0 auto;padding:0 28px;display:flex;align-items:center;justify-content:space-between}
+.brand-block{display:flex;align-items:center;gap:14px}
+.brand-mark{height:52px;width:auto;max-width:200px;display:block;object-fit:contain;object-position:left center}
+.brand-text{display:flex;flex-direction:column}
+.brand-title{font-size:18px;font-weight:700;color:var(--ink);line-height:1.1;letter-spacing:-0.005em}
+.brand-sub{font-size:13px;color:var(--base-dark);margin-top:2px}
+.masthead-actions{display:flex;align-items:flex-end;gap:14px}
+.export-btn{
+  background:var(--primary);border:1px solid var(--primary);color:var(--white);
+  font-family:inherit;font-size:14px;font-weight:600;padding:8px 16px;
+  cursor:pointer;outline:none;display:inline-flex;align-items:center;gap:8px;
+  transition:background 0.15s,border-color 0.15s;line-height:1.2;
+}
+.export-btn:hover{background:var(--primary-dark);border-color:var(--primary-dark)}
+.export-btn:focus{box-shadow:0 0 0 2px var(--primary-lighter)}
+.export-btn:disabled{opacity:0.6;cursor:wait}
+.export-btn svg{width:14px;height:14px;flex-shrink:0}
+.pdf-overlay{
+  position:fixed;top:0;left:0;right:0;bottom:0;
+  background:rgba(22,46,81,0.78);z-index:99999;
+  display:flex;align-items:center;justify-content:center;
+}
+.pdf-overlay-box{
+  background:var(--white);color:var(--ink);
+  padding:28px 36px;border:1px solid var(--primary);
+  display:flex;flex-direction:column;align-items:center;gap:14px;
+  min-width:300px;text-align:center;
+  font-family:'Roboto Mono',monospace;
+}
+.pdf-overlay-title{font-size:14px;font-weight:700;letter-spacing:0.04em;color:var(--primary-darker);text-transform:uppercase}
+.pdf-overlay-status{font-size:12px;color:var(--base-dark);min-height:16px}
+.pdf-spinner{
+  width:38px;height:38px;border:3px solid var(--primary-lighter);
+  border-top-color:var(--primary);border-radius:50%;
+  animation:pdf-spin 0.8s linear infinite;
+}
+@keyframes pdf-spin{to{transform:rotate(360deg)}}
+.pdf-exporting .chart-fullscreen-btn,
+.pdf-exporting .search-input,
+.pdf-exporting .live-indicator{display:none!important}
+.pdf-exporting .table-scroll{max-height:none!important;overflow:visible!important}
+.pdf-exporting thead{position:static!important}
+.year-control{display:flex;flex-direction:column;gap:4px}
+.year-control label{font-size:11px;color:var(--base-dark);text-transform:uppercase;letter-spacing:0.05em;font-weight:600}
+.year-select{background:var(--white);border:1px solid var(--base-dark);color:var(--ink);font-family:inherit;font-size:15px;font-weight:600;padding:8px 14px;cursor:pointer;outline:none;min-width:120px}
+.year-select:focus{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-lighter)}
+.hero{background:linear-gradient(135deg, var(--primary-darker) 0%, var(--primary-dark) 100%);color:var(--white);padding:28px 0;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;top:0;right:0;width:300px;height:100%;background:linear-gradient(to right, transparent, rgba(115,179,231,0.1));pointer-events:none}
+.hero-inner{max-width:1500px;margin:0 auto;padding:0 28px;display:flex;align-items:center;justify-content:space-between;position:relative}
+.hero h1{font-size:30px;font-weight:700;letter-spacing:-0.01em;line-height:1.15}
+.hero-desc{font-size:14px;color:var(--primary-lighter);margin-top:6px;max-width:600px}
+.hero-meta{text-align:right;font-family:'Roboto Mono',monospace;font-size:12px;color:var(--primary-lighter)}
+.hero-meta .lbl{font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--primary-light)}
+.hero-meta .val{font-size:14px;color:var(--white);font-weight:500}
+.container{max-width:1500px;margin:0 auto;padding:32px 28px 80px}
+.section{margin-bottom:36px}
+.section-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:16px;padding-bottom:10px;border-bottom:2px solid var(--primary)}
+.section-title{font-size:18px;font-weight:700;color:var(--primary-darker);letter-spacing:-0.005em;line-height:1.2}
+.section-meta{font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:var(--base-dark);font-weight:600;font-family:'Roboto Mono',monospace}
+.kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:32px}
+.kpi{background:var(--white);border:1px solid var(--base-lighter);border-left:4px solid var(--primary);padding:14px 16px 12px;position:relative;transition:box-shadow 0.15s}
+.kpi:hover{box-shadow:0 2px 8px rgba(0,0,0,0.06)}
+.kpi.success{border-left-color:var(--success)}
+.kpi.warning{border-left-color:var(--warning)}
+.kpi.info{border-left-color:var(--info)}
+.kpi.accent{border-left-color:var(--accent-warm)}
+.kpi-label{font-size:10px;color:var(--base-dark);text-transform:uppercase;letter-spacing:0.08em;font-weight:700;margin-bottom:6px}
+.kpi-value{font-family:'Roboto Mono',monospace;font-weight:600;font-size:24px;color:var(--ink);letter-spacing:-0.01em;line-height:1.1}
+.kpi-delta{font-size:11px;color:var(--base-dark);margin-top:6px}
+.kpi-delta strong{color:var(--ink);font-weight:600}
+.grid{display:grid;gap:14px}
+.grid-2{grid-template-columns:repeat(2,1fr)}
+.grid-3{grid-template-columns:repeat(3,1fr)}
+.grid-4{grid-template-columns:repeat(4,1fr)}
+.card{background:var(--white);border:1px solid var(--base-lighter);padding:18px 18px 14px;position:relative;min-width:0;overflow:hidden}
+.card-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;gap:10px;flex-wrap:wrap}
+.card-title{font-size:14px;font-weight:700;color:var(--ink);line-height:1.25;min-width:0;flex:1 1 auto;word-break:break-word}
+.card-tag{display:inline-block;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--primary);font-weight:700;background:var(--primary-lighter);padding:2px 8px;line-height:1.4;white-space:nowrap}
+.card-sub{font-size:12px;color:var(--base-dark);margin-bottom:14px}
+.chart-wrap{position:relative;height:240px}
+.chart-wrap.tall{height:300px}
+.chart-wrap.xtall{height:360px}
+.q-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+.q-card{background:var(--white);border:1px solid var(--base-lighter);padding:14px 16px;position:relative}
+.q-card.best{border-top:3px solid var(--success);background:linear-gradient(180deg, var(--success-lighter) 0%, var(--white) 50%)}
+.q-tag{font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--base-dark);font-weight:700;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.q-tag .best-pill{font-size:9px;color:var(--success-dark);background:var(--success-lighter);border:1px solid var(--success);padding:1px 6px;letter-spacing:0.05em}
+.q-sales{font-family:'Roboto Mono',monospace;font-weight:600;font-size:22px;color:var(--ink);letter-spacing:-0.01em}
+.q-grid-stats{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:12px;font-family:'Roboto Mono',monospace}
+.q-grid-stats .row{display:flex;justify-content:space-between;color:var(--base-dark)}
+.q-grid-stats .row .v{color:var(--ink);font-weight:500}
+.q-grid-stats .row.np .v{color:var(--success-dark);font-weight:600}
+.table-wrap{background:var(--white);border:1px solid var(--base-lighter);overflow:hidden}
+.table-controls{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--base-lighter);gap:12px;background:var(--off-white);flex-wrap:wrap}
+.search-input{background:var(--white);border:1px solid var(--base-dark);color:var(--ink);padding:7px 12px;font-family:inherit;font-size:13px;width:320px;outline:none}
+.search-input:focus{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-lighter)}
+.search-input::placeholder{color:var(--base)}
+.table-stats{font-size:12px;color:var(--base-dark);font-family:'Roboto Mono',monospace;display:flex;gap:18px;flex-wrap:wrap}
+.table-stats strong{color:var(--ink);font-weight:600}
+.table-scroll{overflow-x:auto;max-height:540px;overflow-y:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead{position:sticky;top:0;background:var(--primary-darker);z-index:2}
+th{font-size:11px;color:var(--white);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;text-align:left;padding:10px 12px;cursor:pointer;user-select:none;white-space:nowrap;border-bottom:1px solid var(--primary-dark)}
+th:hover{background:var(--primary-dark)}
+th.num{text-align:right}
+th.sortable::after{content:' ▾';opacity:0.4;font-size:9px}
+th.sort-asc::after{content:' ▴';opacity:1;color:var(--warning)}
+th.sort-desc::after{content:' ▾';opacity:1;color:var(--warning)}
+td{padding:9px 12px;border-bottom:1px solid var(--base-lighter);color:var(--ink);vertical-align:middle}
+td.num{text-align:right;font-family:'Roboto Mono',monospace;font-size:12px}
+td.job{font-family:'Roboto Mono',monospace;font-weight:600;color:var(--primary);background:var(--primary-lightest);border-left:3px solid var(--primary)}
+tbody tr:hover{background:var(--primary-lightest)}
+tbody tr:hover td.job{background:var(--primary-lighter)}
+.pill{display:inline-block;padding:2px 8px;font-size:10px;font-weight:600;letter-spacing:0.05em;border:1px solid;font-family:'Roboto Mono',monospace}
+.pill.complete{color:var(--success-dark);border-color:var(--success);background:var(--success-lighter)}
+.pill.partial{color:var(--warning-dark);border-color:var(--warning);background:var(--warning-lighter)}
+.pill.early{color:var(--accent-cool);border-color:var(--info);background:var(--info-lighter)}
+.pill.none{color:var(--base-dark);border-color:var(--base-light);background:var(--base-lightest)}
+.profit-pos{color:var(--success-dark);font-weight:600}
+.profit-neg{color:var(--error-dark);font-weight:600}
+.margin-strong{color:var(--success-dark);font-weight:600}
+.margin-weak{color:var(--error-dark);font-weight:600}
+.outstanding-flag{color:var(--accent-warm);font-weight:600}
+.footer{background:var(--primary-darker);color:var(--primary-lighter);padding:20px 0;margin-top:48px}
+.footer-inner{max-width:1500px;margin:0 auto;padding:0 28px;display:flex;justify-content:space-between;align-items:center;font-size:12px;font-family:'Roboto Mono',monospace;flex-wrap:wrap;gap:10px}
+.footer-inner .v{color:var(--white)}
+.footer-credit{max-width:1500px;margin:0 auto;padding:14px 28px 0;text-align:center;font-size:12px;color:var(--primary-light);border-top:1px solid rgba(255,255,255,0.12);font-family:'Source Sans 3',sans-serif}
+.footer-credit a{color:var(--primary-lighter);text-decoration:none;font-weight:600}
+.footer-credit a:hover{color:var(--white);text-decoration:underline}
+@media(max-width:1400px){
+  .grid-4{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:1200px){
+  .kpi-grid{grid-template-columns:repeat(3,1fr)}
+  .grid-3{grid-template-columns:repeat(2,1fr)}
+  .q-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:700px){
+  .kpi-grid,.grid-2,.grid-3,.grid-4,.q-grid{grid-template-columns:1fr}
+  .hero h1{font-size:22px}
+  .hero-inner,.masthead-inner{flex-direction:column;align-items:flex-start;gap:14px}
+}
+.card-actions{display:inline-flex;gap:8px;align-items:center}
+.chart-fullscreen-btn{
+  background:var(--white);border:1px solid var(--base-lighter);
+  width:24px;height:24px;cursor:pointer;display:inline-flex;
+  align-items:center;justify-content:center;color:var(--base-dark);
+  padding:0;transition:background 0.15s,border-color 0.15s,color 0.15s;
+}
+.chart-fullscreen-btn:hover{background:var(--primary-lighter);border-color:var(--primary);color:var(--primary)}
+.chart-fullscreen-btn:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-lighter)}
+.chart-fullscreen-btn svg{width:12px;height:12px;display:block}
+.card.fullscreen{
+  position:fixed;top:0;left:0;right:0;bottom:0;
+  z-index:9999;padding:28px 36px 36px;margin:0;
+  background:var(--white);overflow:auto;border:none;
+}
+.card.fullscreen .card-head{margin-bottom:8px}
+.card.fullscreen .card-title{font-size:22px}
+.card.fullscreen .card-sub{font-size:13px;margin-bottom:20px}
+.card.fullscreen .chart-wrap,
+.card.fullscreen .chart-wrap.tall,
+.card.fullscreen .chart-wrap.xtall{height:calc(100vh - 140px)!important}
+.card.fullscreen .chart-fullscreen-btn{width:32px;height:32px}
+.card.fullscreen .chart-fullscreen-btn svg{width:16px;height:16px}
+body.has-fullscreen{overflow:hidden}
+</style>
+</head>
+<body>
+<div class="top-strip">
+  <div class="top-strip-inner">
+    <span class="top-strip-flag">★</span>
+    <span class="top-strip-text">Internal management reporting · Confidential</span>
+    <span class="live-indicator" title="Dashboard is live">
+      <span class="live-dot" aria-hidden="true"></span>
+      <span>Live</span>
+    </span>
+  </div>
+</div>
+<header class="masthead">
+  <div class="masthead-inner">
+    <div class="brand-block">
+      <img class="brand-mark" id="brandLogo" src="/tenant-logo.png" alt="">
+      <div class="brand-text">
+        <div class="brand-title">Project Profitability Reporting</div>
+        <div class="brand-sub">Operational performance · Cash position · Project register</div>
+      </div>
+    </div>
+    <div class="masthead-actions">
+      <div class="year-control">
+        <label for="yearSelect">Fiscal Year</label>
+        <select class="year-select" id="yearSelect"></select>
+      </div>
+      <button type="button" id="exportPdfBtn" class="export-btn" title="Export full report as PDF">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export PDF
+      </button>
+    </div>
+  </div>
+</header>
+<section class="hero">
+  <div class="hero-inner">
+    <div>
+      <h1>Annual Report — Fiscal Year <span id="hero-year">2013</span></h1>
+      <p class="hero-desc">Project-level profitability, margin trends, overhead composition, and cash collection — keyed by Job #.</p>
+    </div>
+    <div class="hero-meta">
+      <div class="lbl">Report generated</div>
+      <div class="val" id="hero-date">—</div>
+    </div>
+  </div>
+</section>
+<main class="container">
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-label">Total Sales</div><div class="kpi-value" id="kpi-sales">—</div><div class="kpi-delta">Invoiced revenue</div></div>
+    <div class="kpi success"><div class="kpi-label">Gross Profit</div><div class="kpi-value" id="kpi-gp">—</div><div class="kpi-delta"><strong id="kpi-gp-pct">—</strong> gross margin</div></div>
+    <div class="kpi warning"><div class="kpi-label">Total Overhead</div><div class="kpi-value" id="kpi-oh">—</div><div class="kpi-delta"><strong id="kpi-oh-pct">—</strong> of sales</div></div>
+    <div class="kpi accent"><div class="kpi-label">Net Profit</div><div class="kpi-value" id="kpi-np">—</div><div class="kpi-delta"><strong id="kpi-np-pct">—</strong> net margin</div></div>
+    <div class="kpi info"><div class="kpi-label">Active Job #s</div><div class="kpi-value" id="kpi-proj">—</div><div class="kpi-delta"><strong id="kpi-proj-done">—</strong> completed</div></div>
+    <div class="kpi"><div class="kpi-label">Avg Contract</div><div class="kpi-value" id="kpi-avg">—</div><div class="kpi-delta">per active job</div></div>
+  </div>
+  <section class="section">
+    <div class="section-head"><div class="section-title">Quarterly Performance</div><div class="section-meta">Q1 → Q4</div></div>
+    <div class="q-grid" id="qCards"></div>
+    <div class="grid grid-3">
+      <div class="card"><div class="card-head"><div class="card-title">Sales by Quarter</div><div class="card-tag">Revenue</div></div><div class="card-sub">Invoiced volume per period</div><div class="chart-wrap"><canvas id="qSalesChart"></canvas></div></div>
+      <div class="card"><div class="card-head"><div class="card-title">Profit &amp; Overhead Stack</div><div class="card-tag">P&amp;L</div></div><div class="card-sub">Net profit + overhead = gross profit</div><div class="chart-wrap"><canvas id="qStackChart"></canvas></div></div>
+      <div class="card"><div class="card-head"><div class="card-title">Margin Trends</div><div class="card-tag">% of sales</div></div><div class="card-sub">Gross, overhead, and net margin per quarter</div><div class="chart-wrap"><canvas id="qMarginChart"></canvas></div></div>
+    </div>
+  </section>
+  <section class="section">
+    <div class="section-head"><div class="section-title">Monthly Trends</div><div class="section-meta">Jan → Dec</div></div>
+    <div class="grid grid-2">
+      <div class="card"><div class="card-head"><div class="card-title">Monthly P&amp;L Trend</div><div class="card-tag">12-month</div></div><div class="card-sub">Gross profit, overhead, and net profit per month</div><div class="chart-wrap tall"><canvas id="mTrendChart"></canvas></div></div>
+      <div class="card"><div class="card-head"><div class="card-title">Cumulative Net Profit (YTD)</div><div class="card-tag">Running total</div></div><div class="card-sub">Year-to-date net profit accumulation</div><div class="chart-wrap tall"><canvas id="mCumChart"></canvas></div></div>
+    </div>
+    <div style="height:14px"></div>
+    <div class="grid grid-2">
+      <div class="card"><div class="card-head"><div class="card-title">Overhead Composition</div><div class="card-tag">Costs</div></div><div class="card-sub">Base overhead, computers, and furniture by month</div><div class="chart-wrap tall"><canvas id="ohStackChart"></canvas></div></div>
+      <div class="card"><div class="card-head"><div class="card-title">Net Profit by Month</div><div class="card-tag">Profit / Loss</div></div><div class="card-sub">Green = profit month, red = loss month</div><div class="chart-wrap tall"><canvas id="mNetChart"></canvas></div></div>
+    </div>
+  </section>
+  <section class="section">
+    <div class="section-head"><div class="section-title">Project Analytics — by Job #</div><div class="section-meta">Portfolio breakdown</div></div>
+    <div class="grid grid-2">
+      <div class="card"><div class="card-head"><div class="card-title">Top 10 Job #s by Contract Value</div><div class="card-tag">Largest</div></div><div class="card-sub">Highest-revenue projects in the portfolio</div><div class="chart-wrap xtall"><canvas id="topContractChart"></canvas></div></div>
+      <div class="card"><div class="card-head"><div class="card-title">Top 10 Job #s by Profit Dollars</div><div class="card-tag">Most profitable</div></div><div class="card-sub">Largest absolute profit contributors</div><div class="chart-wrap xtall"><canvas id="topProfitChart"></canvas></div></div>
+    </div>
+    <div style="height:14px"></div>
+    <div class="grid grid-4">
+      <div class="card"><div class="card-head"><div class="card-title">Contract Size Mix</div><div class="card-tag">Count</div></div><div class="card-sub">Job #s by contract bracket</div><div class="chart-wrap"><canvas id="sizePieChart"></canvas></div></div>
+      <div class="card"><div class="card-head"><div class="card-title">Completion Status</div><div class="card-tag">% Compl</div></div><div class="card-sub">Job # count by completion band</div><div class="chart-wrap"><canvas id="completePieChart"></canvas></div></div>
+      <div class="card"><div class="card-head"><div class="card-title">Margin Bands</div><div class="card-tag">Distribution</div></div><div class="card-sub">Job # count by margin tier</div><div class="chart-wrap"><canvas id="marginBandChart"></canvas></div></div>
+      <div class="card"><div class="card-head"><div class="card-title">Revenue Concentration</div><div class="card-tag">Pareto</div></div><div class="card-sub">% of revenue by ranked job #</div><div class="chart-wrap"><canvas id="paretoChart"></canvas></div></div>
+    </div>
+    <div style="height:14px"></div>
+    <div class="grid grid-2">
+      <div class="card"><div class="card-head"><div class="card-title">Contract vs Margin — by Job #</div><div class="card-tag">Scatter</div></div><div class="card-sub">Each dot is a Job #. X = contract value (log), Y = profit margin %</div><div class="chart-wrap xtall"><canvas id="scatterChart"></canvas></div></div>
+      <div class="card"><div class="card-head"><div class="card-title">Cash Position</div><div class="card-tag">A/R</div></div><div class="card-sub">Cash received, outstanding A/R, and unbilled backlog</div><div class="chart-wrap xtall"><canvas id="cashChart"></canvas></div></div>
+    </div>
+  </section>
+  <section class="section">
+    <div class="section-head"><div class="section-title">Project Register</div><div class="section-meta" id="tableCount">—</div></div>
+    <div class="table-wrap">
+      <div class="table-controls">
+        <input type="text" class="search-input" id="searchInput" placeholder="Search by Job # or project name…">
+        <div class="table-stats">
+          <span>Showing <strong id="rowsShown">—</strong></span>
+          <span>Total Contract: <strong id="totContract">—</strong></span>
+          <span>Total Profit: <strong id="totProfit">—</strong></span>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table id="projTable">
+          <thead><tr>
+            <th data-sort="job" class="sortable">Job #</th>
+            <th data-sort="name" class="sortable">Project Name</th>
+            <th data-sort="pct_compl" class="sortable num">% Compl</th>
+            <th data-sort="contract" class="sortable num">Contract</th>
+            <th data-sort="cost" class="sortable num">Cost</th>
+            <th data-sort="profit" class="sortable num">Profit</th>
+            <th data-sort="profit_pct" class="sortable num">Margin</th>
+            <th data-sort="invoiced" class="sortable num">Invoiced</th>
+            <th data-sort="pmt_recd" class="sortable num">Pmt Recd</th>
+            <th data-sort="outstanding" class="sortable num">A/R</th>
+          </tr></thead>
+          <tbody id="projTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+<footer class="footer">
+  <div class="footer-inner">
+    <div>SCC OPERATIONS · ANNUAL PROFITABILITY REPORT</div>
+    <div>JOB # IS THE PRIMARY REFERENCE KEY · <span class="v" id="genDate">—</span></div>
+  </div>
+  <div class="footer-credit">Developed by <a href="https://complete3tech.com" target="_blank" rel="noopener noreferrer">Complete3 Tech Solutions</a></div>
+</footer>
+<script>
+const TENANT_LOGO_URL = '/tenant-logo.png';
+let SCC_LOGO_DATA = TENANT_LOGO_URL;
+const SCC_LOGO_W = 165;
+const SCC_LOGO_H = 94;
+(function initBrandLogo(){
+  const img = document.getElementById('brandLogo');
+  if (img) {
+    img.src = TENANT_LOGO_URL;
+    img.onerror = function(){ this.onerror = null; this.src = '/assets/scc.png'; };
+  }
+})();
+
+let SCC_LOGO_PDF_DATA = null;
+function buildPdfLogoData(){
+  if (SCC_LOGO_PDF_DATA) return Promise.resolve(SCC_LOGO_PDF_DATA);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth || SCC_LOGO_W;
+      const h = img.naturalHeight || SCC_LOGO_H;
+      const pad = Math.max(6, Math.round(h * 0.08));
+      const c = document.createElement('canvas');
+      c.width = w + pad * 2;
+      c.height = h + pad * 2;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, pad, pad, w, h);
+      SCC_LOGO_PDF_DATA = c.toDataURL('image/png');
+      resolve(SCC_LOGO_PDF_DATA);
+    };
+    img.onerror = () => { SCC_LOGO_PDF_DATA = SCC_LOGO_DATA; resolve(SCC_LOGO_PDF_DATA); };
+    img.src = SCC_LOGO_DATA;
+  });
+}
+
+function pdfLogoSize(maxH, maxW){
+  const ar = SCC_LOGO_W / SCC_LOGO_H;
+  let h = maxH;
+  let w = h * ar;
+  if (w > maxW){ w = maxW; h = w / ar; }
+  return { w, h };
+}
+
+const C3_DEV_URL = 'https://complete3tech.com';
+const C3_DEV_LABEL = 'Developed by ';
+const C3_DEV_NAME = 'Complete3 Tech Solutions';
+
+function drawPdfDeveloperCredit(pdf, pageW, pageH, footerHeight){
+  const y = pageH - 3.5;
+  pdf.setFontSize(7.5);
+  pdf.setFont('helvetica', 'normal');
+  const labelW = pdf.getTextWidth(C3_DEV_LABEL);
+  const nameW = pdf.getTextWidth(C3_DEV_NAME);
+  const startX = (pageW - labelW - nameW) / 2;
+  pdf.setTextColor(86, 92, 101);
+  pdf.text(C3_DEV_LABEL, startX, y);
+  if (typeof pdf.textWithLink === 'function') {
+    pdf.setTextColor(0, 94, 162);
+    pdf.textWithLink(C3_DEV_NAME, startX + labelW, y, { url: C3_DEV_URL });
+  } else {
+    pdf.setTextColor(0, 94, 162);
+    pdf.text(C3_DEV_NAME, startX + labelW, y);
+    pdf.link(startX + labelW, y - 3, nameW, 4, { url: C3_DEV_URL });
+  }
+}
+
+let DATA = {};
+let YEARS = [];
+let currentYear = null;
+
+async function api(url, opts){
+  const r = await fetch(url, Object.assign({credentials:'include'}, opts || {}));
+  if (r.status === 401){ window.location = '/login'; throw new Error('unauthorized'); }
+  if (!r.ok) throw new Error('api_' + r.status);
+  return r.json();
+}
+
+async function fetchYears(){
+  const j = await api('/api/years');
+  YEARS = j.years || [];
+  const sel = document.getElementById('yearSelect');
+  sel.innerHTML = '';
+  YEARS.forEach(y => {
+    const o = document.createElement('option');
+    o.value = y; o.textContent = y;
+    sel.appendChild(o);
+  });
+  const def = j.default || (YEARS.length ? YEARS[YEARS.length-1] : null);
+  if (def != null) sel.value = def;
+  return def;
+}
+
+async function loadYear(year){
+  if (year == null) return;
+  const j = await api('/api/dashboard?year=' + encodeURIComponent(year));
+  DATA[year] = j;
+  currentYear = year;
+  renderYear(year);
+}
+
+async function bootstrap(){
+  try {
+    const def = await fetchYears();
+    if (def != null) await loadYear(def);
+  } catch (e) {
+    console.error('dashboard boot failed', e);
+  }
+}
+let currentSort = {key:'job', dir:1};
+let searchFilter = '';
+
+const fmt$ = (n) => {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  const abs = Math.abs(n);
+  if (abs >= 1000000) return (n<0?'-':'') + '$' + (abs/1000000).toFixed(2) + 'M';
+  if (abs >= 1000) return (n<0?'-':'') + '$' + (abs/1000).toFixed(0) + 'K';
+  return (n<0?'-':'') + '$' + abs.toFixed(0);
+};
+const fmt$full = (n) => {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  return (n<0?'-':'') + '$' + Math.abs(n).toLocaleString(undefined,{maximumFractionDigits:0});
+};
+const fmtPct = (n) => {
+  if (n === null || n === undefined || isNaN(n)) return '—';
+  return (n*100).toFixed(1) + '%';
+};
+const fmtJob = (j) => '#' + j;
+
+Chart.defaults.font.family = "'Source Sans 3', 'Source Sans Pro', sans-serif";
+Chart.defaults.font.size = 11;
+Chart.defaults.color = '#3d4551';
+Chart.defaults.borderColor = '#dfe1e2';
+Chart.defaults.plugins.legend.labels.color = '#3d4551';
+Chart.defaults.plugins.legend.labels.boxWidth = 10;
+Chart.defaults.plugins.legend.labels.boxHeight = 10;
+Chart.defaults.plugins.legend.labels.font = {size:11, weight:'600'};
+Chart.defaults.plugins.tooltip.backgroundColor = '#162e51';
+Chart.defaults.plugins.tooltip.titleColor = '#ffffff';
+Chart.defaults.plugins.tooltip.bodyColor = '#d9e8f6';
+Chart.defaults.plugins.tooltip.borderColor = '#005ea2';
+Chart.defaults.plugins.tooltip.borderWidth = 1;
+Chart.defaults.plugins.tooltip.padding = 10;
+Chart.defaults.plugins.tooltip.titleFont = {size:13, weight:'700'};
+Chart.defaults.plugins.tooltip.bodyFont = {size:12};
+Chart.defaults.plugins.tooltip.cornerRadius = 0;
+Chart.defaults.plugins.tooltip.displayColors = true;
+Chart.defaults.plugins.tooltip.boxPadding = 4;
+
+const C = {
+  primary:'#005ea2', primaryDark:'#1a4480', primaryDarker:'#162e51',
+  primaryLight:'#73b3e7', primaryLighter:'#d9e8f6',
+  success:'#00a91c', successDark:'#216e1f', successLighter:'#ecf3ec',
+  warning:'#e5a000', warningDark:'#936f38', warningLighter:'#faf3d1',
+  error:'#d83933', errorDark:'#b50909',
+  info:'#009ec1', infoLighter:'#e7f6f8',
+  accentWarm:'#c05600', accentCool:'#07648d',
+  base:'#71767a', baseDark:'#565c65', baseLighter:'#dfe1e2', ink:'#1b1b1b'
+};
+const gridStyle = {color:'#e6e6e6', lineWidth:1};
+const axisTickFont = {family:"'Roboto Mono',monospace", size:11, weight:'500'};
+
+let charts = {};
+function clearCharts(){ Object.values(charts).forEach(c => c && c.destroy()); charts = {}; }
+
+function renderYear(year){
+  currentYear = year;
+  document.getElementById('hero-year').textContent = year;
+  const d = DATA[year];
+  renderKPIs(d); renderQuarterCards(d); clearCharts();
+  renderQSalesChart(d); renderQStackChart(d); renderQMarginChart(d);
+  renderMTrendChart(d); renderMCumChart(d); renderOhStackChart(d); renderMNetChart(d);
+  renderTopContractChart(d); renderTopProfitChart(d);
+  renderSizePieChart(d); renderCompletePieChart(d); renderMarginBandChart(d); renderParetoChart(d);
+  renderScatterChart(d); renderCashChart(d);
+  renderTable(d);
+}
+
+function renderKPIs(d){
+  const t = d.totals;
+  document.getElementById('kpi-sales').textContent = fmt$(t.sales);
+  document.getElementById('kpi-gp').textContent = fmt$(t.gross_profit);
+  document.getElementById('kpi-gp-pct').textContent = fmtPct(t.gross_pct);
+  document.getElementById('kpi-oh').textContent = fmt$(t.overhead);
+  document.getElementById('kpi-oh-pct').textContent = fmtPct(t.overhead_pct);
+  document.getElementById('kpi-np').textContent = fmt$(t.net_profit);
+  document.getElementById('kpi-np-pct').textContent = fmtPct(t.net_pct);
+  document.getElementById('kpi-proj').textContent = d.projects.length;
+  document.getElementById('kpi-proj-done').textContent = d.projects.filter(p => p.pct_compl === 1).length;
+  const avg = d.projects.reduce((a,p)=>a+(p.contract||0),0)/d.projects.length;
+  document.getElementById('kpi-avg').textContent = fmt$(avg);
+}
+
+function renderQuarterCards(d){
+  const maxNp = Math.max(...d.quarterly.map(q=>q.net_profit));
+  document.getElementById('qCards').innerHTML = d.quarterly.map(q => `
+    <div class="q-card ${q.net_profit === maxNp ? 'best' : ''}">
+      <div class="q-tag"><span>${q.quarter}</span>${q.net_profit === maxNp ? '<span class="best-pill">Best Net</span>' : ''}</div>
+      <div class="q-sales">${fmt$(q.sales)}</div>
+      <div class="q-grid-stats">
+        <div class="row"><span>Gross $</span><span class="v">${fmt$(q.gross_profit)}</span></div>
+        <div class="row"><span>Gross %</span><span class="v">${fmtPct(q.gross_pct)}</span></div>
+        <div class="row"><span>OH $</span><span class="v">${fmt$(q.overhead)}</span></div>
+        <div class="row"><span>OH %</span><span class="v">${fmtPct(q.overhead_pct)}</span></div>
+        <div class="row np"><span>Net $</span><span class="v">${fmt$(q.net_profit)}</span></div>
+        <div class="row np"><span>Net %</span><span class="v">${fmtPct(q.net_pct)}</span></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderQSalesChart(d){
+  charts.qSales = new Chart(document.getElementById('qSalesChart'), {
+    type:'bar',
+    data:{labels:d.quarterly.map(q=>q.quarter),
+      datasets:[{label:'Sales', data:d.quarterly.map(q=>q.sales),
+        backgroundColor:C.primary, borderWidth:0, barPercentage:0.55}]},
+    options:{maintainAspectRatio:false, responsive:true,
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c)=>'Sales: '+fmt$full(c.parsed.y)}}},
+      scales:{x:{grid:{display:false}, ticks:{font:{size:12,weight:'600'}}},
+        y:{grid:gridStyle, ticks:{callback:(v)=>fmt$(v),font:axisTickFont}, beginAtZero:true}}}
+  });
+}
+
+function renderQStackChart(d){
+  charts.qStack = new Chart(document.getElementById('qStackChart'), {
+    type:'bar',
+    data:{labels:d.quarterly.map(q=>q.quarter),
+      datasets:[
+        {label:'Net Profit', data:d.quarterly.map(q=>q.net_profit), backgroundColor:C.success, borderWidth:0, barPercentage:0.55, stack:'a'},
+        {label:'Overhead', data:d.quarterly.map(q=>q.overhead), backgroundColor:C.warning, borderWidth:0, barPercentage:0.55, stack:'a'}
+      ]},
+    options:{maintainAspectRatio:false, responsive:true,
+      plugins:{legend:{position:'bottom'}, tooltip:{callbacks:{label:(c)=>c.dataset.label+': '+fmt$full(c.parsed.y)}}},
+      scales:{x:{stacked:true, grid:{display:false}, ticks:{font:{size:12,weight:'600'}}},
+        y:{stacked:true, grid:gridStyle, ticks:{callback:(v)=>fmt$(v),font:axisTickFont}, beginAtZero:true}}}
+  });
+}
+
+function renderQMarginChart(d){
+  charts.qMargin = new Chart(document.getElementById('qMarginChart'), {
+    type:'line',
+    data:{labels:d.quarterly.map(q=>q.quarter),
+      datasets:[
+        {label:'Gross %', data:d.quarterly.map(q=>q.gross_pct*100), borderColor:C.success, backgroundColor:C.success, tension:0.25, pointRadius:5, pointHoverRadius:7, borderWidth:2.5},
+        {label:'Overhead %', data:d.quarterly.map(q=>q.overhead_pct*100), borderColor:C.warning, backgroundColor:C.warning, tension:0.25, pointRadius:5, pointHoverRadius:7, borderWidth:2.5},
+        {label:'Net %', data:d.quarterly.map(q=>q.net_pct*100), borderColor:C.primary, backgroundColor:C.primary, tension:0.25, pointRadius:5, pointHoverRadius:7, borderWidth:2.5}
+      ]},
+    options:{maintainAspectRatio:false, responsive:true,
+      plugins:{legend:{position:'bottom'}, tooltip:{callbacks:{label:(c)=>c.dataset.label+': '+c.parsed.y.toFixed(1)+'%'}}},
+      scales:{x:{grid:{display:false}, ticks:{font:{size:12,weight:'600'}}},
+        y:{grid:gridStyle, ticks:{callback:(v)=>v.toFixed(0)+'%',font:axisTickFont}, beginAtZero:true}}}
+  });
+}
+
+function renderMTrendChart(d){
+  charts.mTrend = new Chart(document.getElementById('mTrendChart'), {
+    type:'line',
+    data:{labels:d.monthly.map(m=>m.month.slice(0,3)),
+      datasets:[
+        {label:'Gross Profit', data:d.monthly.map(m=>m.gross_profit), borderColor:C.primary, backgroundColor:'rgba(0,94,162,0.10)', tension:0.25, fill:true, pointRadius:3, borderWidth:2.5},
+        {label:'Overhead', data:d.monthly.map(m=>m.overhead), borderColor:C.warning, backgroundColor:'transparent', tension:0.25, fill:false, pointRadius:3, borderWidth:2, borderDash:[6,4]},
+        {label:'Net Profit', data:d.monthly.map(m=>m.net_profit), borderColor:C.success, backgroundColor:'transparent', tension:0.25, fill:false, pointRadius:3, borderWidth:2.5}
+      ]},
+    options:{maintainAspectRatio:false, responsive:true,
+      plugins:{legend:{position:'bottom'}, tooltip:{callbacks:{label:(c)=>c.dataset.label+': '+fmt$full(c.parsed.y)}}},
+      scales:{x:{grid:{display:false}, ticks:{font:axisTickFont}},
+        y:{grid:gridStyle, ticks:{callback:(v)=>fmt$(v),font:axisTickFont}}}}
+  });
+}
+
+function renderMCumChart(d){
+  let cum = 0;
+  const cumData = d.monthly.map(m => { cum += m.net_profit; return cum; });
+  charts.mCum = new Chart(document.getElementById('mCumChart'), {
+    type:'line',
+    data:{labels:d.monthly.map(m=>m.month.slice(0,3)),
+      datasets:[{label:'Cumulative Net Profit', data:cumData, borderColor:C.primary, borderWidth:3,
+        backgroundColor:(ctx)=>{
+          const g = ctx.chart.ctx.createLinearGradient(0,0,0,300);
+          g.addColorStop(0,'rgba(0,94,162,0.30)'); g.addColorStop(1,'rgba(0,94,162,0.02)');
+          return g;
+        }, fill:true, tension:0.3,
+        pointRadius:4, pointBackgroundColor:C.primary, pointBorderColor:'#fff', pointBorderWidth:2}]},
+    options:{maintainAspectRatio:false, responsive:true,
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c)=>'YTD: '+fmt$full(c.parsed.y)}}},
+      scales:{x:{grid:{display:false}, ticks:{font:axisTickFont}},
+        y:{grid:gridStyle, ticks:{callback:(v)=>fmt$(v),font:axisTickFont}}}}
+  });
+}
+
+function renderOhStackChart(d){
+  charts.ohStack = new Chart(document.getElementById('ohStackChart'), {
+    type:'bar',
+    data:{labels:d.overhead_detail.map(m=>m.month.slice(0,3)),
+      datasets:[
+        {label:'Base Overhead', data:d.overhead_detail.map(m=>m.overhead), backgroundColor:C.primary, stack:'a', borderWidth:0},
+        {label:'Computers', data:d.overhead_detail.map(m=>m.computers), backgroundColor:C.warning, stack:'a', borderWidth:0},
+        {label:'Furniture', data:d.overhead_detail.map(m=>m.furniture), backgroundColor:C.accentWarm, stack:'a', borderWidth:0}
+      ]},
+    options:{maintainAspectRatio:false, responsive:true,
+      plugins:{legend:{position:'bottom'}, tooltip:{callbacks:{label:(c)=>c.dataset.label+': '+fmt$full(c.parsed.y)}}},
+      scales:{x:{stacked:true, grid:{display:false}, ticks:{font:axisTickFont}},
+        y:{stacked:true, grid:gridStyle, ticks:{callback:(v)=>fmt$(v),font:axisTickFont}}}}
+  });
+}
+
+function renderMNetChart(d){
+  charts.mNet = new Chart(document.getElementById('mNetChart'), {
+    type:'bar',
+    data:{labels:d.monthly.map(m=>m.month.slice(0,3)),
+      datasets:[{label:'Net Profit', data:d.monthly.map(m=>m.net_profit),
+        backgroundColor:d.monthly.map(m => m.net_profit >= 0 ? C.success : C.error), borderWidth:0}]},
+    options:{maintainAspectRatio:false, responsive:true,
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c)=>'Net: '+fmt$full(c.parsed.y)}}},
+      scales:{x:{grid:{display:false}, ticks:{font:axisTickFont}},
+        y:{grid:gridStyle, ticks:{callback:(v)=>fmt$(v),font:axisTickFont}}}}
+  });
+}
+
+function renderTopContractChart(d){
+  const top = [...d.projects].sort((a,b)=>b.contract-a.contract).slice(0,10);
+  charts.topContract = new Chart(document.getElementById('topContractChart'), {
+    type:'bar',
+    data:{labels:top.map(p=>fmtJob(p.job)),
+      datasets:[{label:'Contract', data:top.map(p=>p.contract), backgroundColor:C.primary, borderWidth:0}]},
+    options:{indexAxis:'y', maintainAspectRatio:false, responsive:true,
+      plugins:{legend:{display:false},
+        tooltip:{callbacks:{
+          title:(c)=>fmtJob(top[c[0].dataIndex].job)+' · '+top[c[0].dataIndex].name,
+          label:(c)=>'Contract: '+fmt$full(c.parsed.x)
+        }}},
+      scales:{x:{grid:gridStyle, ticks:{callback:(v)=>fmt$(v),font:axisTickFont}, beginAtZero:true},
+        y:{grid:{display:false}, ticks:{font:{family:"'Roboto Mono',monospace",size:12,weight:'600'}}}}}
+  });
+}
+
+function renderTopProfitChart(d){
+  const top = [...d.projects].sort((a,b)=>b.profit-a.profit).slice(0,10);
+  charts.topProfit = new Chart(document.getElementById('topProfitChart'), {
+    type:'bar',
+    data:{labels:top.map(p=>fmtJob(p.job)),
+      datasets:[{label:'Profit', data:top.map(p=>p.profit), backgroundColor:C.success, borderWidth:0}]},
+    options:{indexAxis:'y', maintainAspectRatio:false, responsive:true,
+      plugins:{legend:{display:false},
+        tooltip:{callbacks:{
+          title:(c)=>fmtJob(top[c[0].dataIndex].job)+' · '+top[c[0].dataIndex].name,
+          label:(c)=>['Profit: '+fmt$full(c.parsed.x),'Margin: '+fmtPct(top[c.dataIndex].profit_pct)]
+        }}},
+      scales:{x:{grid:gridStyle, ticks:{callback:(v)=>fmt$(v),font:axisTickFont}, beginAtZero:true},
+        y:{grid:{display:false}, ticks:{font:{family:"'Roboto Mono',monospace",size:12,weight:'600'}}}}}
+  });
+}
+
+function renderSizePieChart(d){
+  const buckets = [
+    {label:'Under $5K', min:0, max:5000, count:0},
+    {label:'$5K – $25K', min:5000, max:25000, count:0},
+    {label:'$25K – $100K', min:25000, max:100000, count:0},
+    {label:'$100K+', min:100000, max:Infinity, count:0}
+  ];
+  d.projects.forEach(p => {
+    const c = p.contract || 0;
+    for (const b of buckets) if (c >= b.min && c < b.max) { b.count++; break; }
+  });
+  charts.sizePie = new Chart(document.getElementById('sizePieChart'), {
+    type:'doughnut',
+    data:{labels:buckets.map(b=>b.label),
+      datasets:[{data:buckets.map(b=>b.count),
+        backgroundColor:[C.primaryLight, C.primary, C.primaryDark, C.primaryDarker],
+        borderColor:'#fff', borderWidth:2}]},
+    options:{maintainAspectRatio:false, responsive:true,
+      plugins:{legend:{position:'bottom', labels:{padding:8, font:{size:10}}},
+        tooltip:{callbacks:{label:(c)=>c.label+': '+c.parsed+' Job #s'}}}}
+  });
+}
+
+function renderCompletePieChart(d){
+  const bands = [
+    {label:'Complete (100%)', count:0, color:C.success},
+    {label:'In Progress (50–99%)', count:0, color:C.warning},
+    {label:'Started (1–49%)', count:0, color:C.accentWarm},
+    {label:'Not Started (0%)', count:0, color:C.base}
+  ];
+  d.projects.forEach(p => {
+    const c = p.pct_compl || 0;
+    if (c >= 1) bands[0].count++;
+    else if (c >= 0.5) bands[1].count++;
+    else if (c > 0) bands[2].count++;
+    else bands[3].count++;
+  });
+  charts.completePie = new Chart(document.getElementById('completePieChart'), {
+    type:'doughnut',
+    data:{labels:bands.map(b=>b.label),
+      datasets:[{data:bands.map(b=>b.count), backgroundColor:bands.map(b=>b.color), borderColor:'#fff', borderWidth:2}]},
+    options:{maintainAspectRatio:false, responsive:true,
+      plugins:{legend:{position:'bottom', labels:{padding:8, font:{size:10}}},
+        tooltip:{callbacks:{label:(c)=>c.label+': '+c.parsed+' Job #s'}}}}
+  });
+}
+
+function renderMarginBandChart(d){
+  const bands = [
+    {label:'Loss', count:0, color:C.error},
+    {label:'0–10%', count:0, color:C.warning},
+    {label:'10–20%', count:0, color:C.primaryLight},
+    {label:'20–30%', count:0, color:C.primary},
+    {label:'30%+', count:0, color:C.success}
+  ];
+  d.projects.forEach(p => {
+    const m = p.profit_pct || 0;
+    if (m < 0) bands[0].count++;
+    else if (m < 0.1) bands[1].count++;
+    else if (m < 0.2) bands[2].count++;
+    else if (m < 0.3) bands[3].count++;
+    else bands[4].count++;
+  });
+  charts.marginBand = new Chart(document.getElementById('marginBandChart'), {
+    type:'bar',
+    data:{labels:bands.map(b=>b.label),
+      datasets:[{data:bands.map(b=>b.count), backgroundColor:bands.map(b=>b.color), borderWidth:0}]},
+    options:{maintainAspectRatio:false, responsive:true,
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c)=>c.parsed.y+' Job #s'}}},
+      scales:{x:{grid:{display:false}, ticks:{font:{family:"'Roboto Mono',monospace",size:10,weight:'600'}}},
+        y:{grid:gridStyle, ticks:{stepSize:5, font:axisTickFont}, beginAtZero:true}}}
+  });
+}
+
+function renderParetoChart(d){
+  const sorted = [...d.projects].sort((a,b)=>b.contract-a.contract);
+  const total = sorted.reduce((a,p)=>a+(p.contract||0),0);
+  let cum = 0;
+  const cumPct = sorted.map(p => { cum += p.contract; return (cum/total)*100; });
+  const labels = [], data = [];
+  const step = Math.max(1, Math.floor(cumPct.length/10));
+  for (let i=0; i<cumPct.length; i+=step){ labels.push('Top '+(i+1)); data.push(cumPct[i]); }
+  if (data[data.length-1] < 100) { labels.push('All'); data.push(100); }
+  charts.pareto = new Chart(document.getElementById('paretoChart'), {
+    type:'line',
+    data:{labels, datasets:[{label:'% of Revenue', data, borderColor:C.primary, borderWidth:2.5,
+      backgroundColor:'rgba(0,94,162,0.15)', fill:true, tension:0.2, pointRadius:4, pointBackgroundColor:C.primary}]},
+    options:{maintainAspectRatio:false, responsive:true,
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:(c)=>c.parsed.y.toFixed(0)+'% of revenue'}}},
+      scales:{x:{grid:{display:false}, ticks:{font:{family:"'Roboto Mono',monospace",size:10}, maxRotation:45}},
+        y:{grid:gridStyle, ticks:{callback:(v)=>v+'%',font:axisTickFont}, max:100, beginAtZero:true}}}
+  });
+}
+
+function renderScatterChart(d){
+  const points = d.projects.filter(p=>p.contract>0).map(p=>({x:p.contract, y:(p.profit_pct||0)*100, job:p.job, name:p.name}));
+  charts.scatter = new Chart(document.getElementById('scatterChart'), {
+    type:'scatter',
+    data:{datasets:[{label:'Job #', data:points,
+      backgroundColor:(c)=>c.parsed && c.parsed.y>=0 ? 'rgba(0,94,162,0.55)' : 'rgba(216,57,51,0.7)',
+      borderColor:(c)=>c.parsed && c.parsed.y>=0 ? C.primary : C.error,
+      borderWidth:1, pointRadius:5, pointHoverRadius:8}]},
+    options:{maintainAspectRatio:false, responsive:true,
+      plugins:{legend:{display:false}, tooltip:{callbacks:{
+        title:(c)=>fmtJob(c[0].raw.job)+' · '+c[0].raw.name,
+        label:(c)=>['Contract: '+fmt$full(c.parsed.x),'Margin: '+c.parsed.y.toFixed(1)+'%']
+      }}},
+      scales:{x:{type:'logarithmic',
+        title:{display:true, text:'Contract Value (log scale)', font:{size:11,weight:'700'}, color:C.baseDark},
+        grid:gridStyle, ticks:{callback:(v)=>fmt$(v),font:axisTickFont}},
+        y:{title:{display:true, text:'Profit Margin %', font:{size:11,weight:'700'}, color:C.baseDark},
+          grid:gridStyle, ticks:{callback:(v)=>v+'%',font:axisTickFont}}}}
+  });
+}
+
+function renderCashChart(d){
+  const totalInv = d.projects.reduce((a,p)=>a+(p.invoiced||0),0);
+  const totalPaid = d.projects.reduce((a,p)=>a+(p.pmt_recd||0),0);
+  const totalContract = d.projects.reduce((a,p)=>a+(p.contract||0),0);
+  const unbilled = Math.max(0, totalContract - totalInv);
+  const outstanding = Math.max(0, totalInv - totalPaid);
+  charts.cash = new Chart(document.getElementById('cashChart'), {
+    type:'doughnut',
+    data:{labels:['Cash Received','Outstanding A/R','Unbilled Backlog'],
+      datasets:[{data:[totalPaid, outstanding, unbilled],
+        backgroundColor:[C.success, C.warning, C.primaryLight], borderColor:'#fff', borderWidth:2}]},
+    options:{maintainAspectRatio:false, responsive:true, cutout:'58%',
+      plugins:{legend:{position:'bottom', labels:{padding:10, font:{size:11,weight:'600'}}},
+        tooltip:{callbacks:{label:(c)=>c.label+': '+fmt$full(c.parsed)}}}}
+  });
+}
+
+function renderTable(d){
+  const tbody = document.getElementById('projTableBody');
+  let rows = d.projects.map(p => ({...p, outstanding:(p.invoiced||0) - (p.pmt_recd||0)}));
+
+  if (searchFilter) {
+    const s = searchFilter.toLowerCase();
+    rows = rows.filter(r => String(r.job).includes(s) || (r.name||'').toLowerCase().includes(s));
+  }
+
+  rows.sort((a,b) => {
+    const aV = a[currentSort.key], bV = b[currentSort.key];
+    if (typeof aV === 'string') return currentSort.dir * aV.localeCompare(bV);
+    return currentSort.dir * ((aV||0) - (bV||0));
+  });
+
+  document.querySelectorAll('th[data-sort]').forEach(th => {
+    th.classList.remove('sort-asc','sort-desc');
+    if (th.dataset.sort === currentSort.key) th.classList.add(currentSort.dir > 0 ? 'sort-asc' : 'sort-desc');
+  });
+
+  document.getElementById('tableCount').textContent = rows.length + ' Job #s';
+  document.getElementById('rowsShown').textContent = rows.length;
+  document.getElementById('totContract').textContent = fmt$full(rows.reduce((a,r)=>a+(r.contract||0),0));
+  document.getElementById('totProfit').textContent = fmt$full(rows.reduce((a,r)=>a+(r.profit||0),0));
+
+  tbody.innerHTML = rows.map(p => {
+    const pctC = p.pct_compl || 0;
+    let pill;
+    if (pctC >= 1) pill = '<span class="pill complete">'+(pctC*100).toFixed(0)+'%</span>';
+    else if (pctC >= 0.5) pill = '<span class="pill partial">'+(pctC*100).toFixed(0)+'%</span>';
+    else if (pctC > 0) pill = '<span class="pill early">'+(pctC*100).toFixed(0)+'%</span>';
+    else pill = '<span class="pill none">0%</span>';
+    const profitCls = p.profit >= 0 ? 'profit-pos' : 'profit-neg';
+    const marginCls = p.profit_pct >= 0.15 ? 'margin-strong' : (p.profit_pct < 0 ? 'margin-weak' : '');
+    const arCls = p.outstanding > 1000 ? 'outstanding-flag' : '';
+    return `<tr>
+      <td class="job">${p.job||''}</td>
+      <td>${p.name||''}</td>
+      <td class="num">${pill}</td>
+      <td class="num">${fmt$full(p.contract)}</td>
+      <td class="num">${fmt$full(p.cost)}</td>
+      <td class="num ${profitCls}">${fmt$full(p.profit)}</td>
+      <td class="num ${marginCls}">${fmtPct(p.profit_pct)}</td>
+      <td class="num">${fmt$full(p.invoiced)}</td>
+      <td class="num">${fmt$full(p.pmt_recd)}</td>
+      <td class="num ${arCls}">${fmt$full(p.outstanding)}</td>
+    </tr>`;
+  }).join('');
+}
+
+document.querySelectorAll('th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    if (currentSort.key === key) currentSort.dir *= -1;
+    else { currentSort.key = key; currentSort.dir = (key === 'name' || key === 'job') ? 1 : -1; }
+    renderTable(DATA[currentYear]);
+  });
+});
+
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  searchFilter = e.target.value;
+  renderTable(DATA[currentYear]);
+});
+
+const yearSel = document.getElementById('yearSelect');
+yearSel.addEventListener('change', () => loadYear(yearSel.value));
+
+const today = new Date().toISOString().slice(0,10);
+document.getElementById('genDate').textContent = today;
+document.getElementById('hero-date').textContent = today;
+
+const EXPAND_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>';
+const COLLAPSE_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4"/></svg>';
+
+function toggleCardFullscreen(card, btn){
+  const isFs = card.classList.toggle('fullscreen');
+  document.body.classList.toggle('has-fullscreen', isFs);
+  btn.innerHTML = isFs ? COLLAPSE_ICON : EXPAND_ICON;
+  btn.title = isFs ? 'Exit fullscreen' : 'Fullscreen';
+  btn.setAttribute('aria-label', isFs ? 'Exit fullscreen' : 'Enter fullscreen');
+  setTimeout(() => Object.values(charts).forEach(c => c && c.resize && c.resize()), 60);
+}
+
+function setupFullscreen(){
+  document.querySelectorAll('.card').forEach(card => {
+    if (!card.querySelector('.chart-wrap')) return;
+    if (card.querySelector('.chart-fullscreen-btn')) return;
+    const head = card.querySelector('.card-head');
+    if (!head) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'chart-fullscreen-btn';
+    btn.title = 'Fullscreen';
+    btn.setAttribute('aria-label', 'Enter fullscreen');
+    btn.innerHTML = EXPAND_ICON;
+    const tag = head.querySelector('.card-tag');
+    if (tag) {
+      const wrap = document.createElement('div');
+      wrap.className = 'card-actions';
+      head.insertBefore(wrap, tag);
+      wrap.appendChild(tag);
+      wrap.appendChild(btn);
+    } else {
+      head.appendChild(btn);
+    }
+    btn.addEventListener('click', () => toggleCardFullscreen(card, btn));
+  });
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape'){
+    const fs = document.querySelector('.card.fullscreen');
+    if (fs) {
+      const btn = fs.querySelector('.chart-fullscreen-btn');
+      if (btn) toggleCardFullscreen(fs, btn);
+    }
+  }
+});
+
+async function exportPDF(){
+  const btn = document.getElementById('exportPdfBtn');
+  if (!window.jspdf || !window.html2canvas){
+    alert('PDF libraries are still loading — please try again in a moment.');
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'pdf-overlay';
+  overlay.setAttribute('data-html2canvas-ignore','true');
+  overlay.innerHTML = '<div class="pdf-overlay-box" data-html2canvas-ignore="true"><div class="pdf-spinner"></div><div class="pdf-overlay-title">Generating PDF Report</div><div class="pdf-overlay-status" id="pdfStatus">Preparing…</div></div>';
+  document.body.appendChild(overlay);
+  const setStatus = (s) => { const el = document.getElementById('pdfStatus'); if (el) el.textContent = s; };
+
+  try {
+    document.body.classList.add('pdf-exporting');
+    btn.disabled = true;
+    await new Promise(r => setTimeout(r, 250));
+    Object.values(charts).forEach(c => c && c.resize && c.resize());
+    await new Promise((resolve) => {
+      const img = document.getElementById('brandLogo');
+      if (!img || img.complete) return resolve();
+      img.onload = img.onerror = () => resolve();
+    });
+    const pdfLogoData = await buildPdfLogoData();
+    await new Promise(r => setTimeout(r, 250));
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({orientation:'p', unit:'mm', format:'a4', compress:true});
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 8;
+    const headerH = 18;
+    const footerH = 14;
+    const contentWidth = pageWidth - margin*2;
+    const contentTop = headerH + 4;
+    const contentBottom = pageHeight - footerH - 2;
+    const today = new Date().toISOString().slice(0,10);
+
+    const portraitLogo = pdfLogoSize(11, 36);
+    const landscapeLogo = pdfLogoSize(10, 28);
+    const logoPad = 1.2;
+
+    const drawPdfLogo = (x, y, size) => {
+      const boxW = size.w + logoPad * 2;
+      const boxH = size.h + logoPad * 2;
+      pdf.setFillColor(255, 255, 255);
+      pdf.rect(x, y, boxW, boxH, 'F');
+      try {
+        pdf.addImage(pdfLogoData, 'PNG', x + logoPad, y + logoPad, size.w, size.h, undefined, 'FAST');
+      } catch (e) { console.warn('PDF logo:', e); }
+      return boxW;
+    };
+
+    const drawHeader = () => {
+      pdf.setFillColor(22,46,81);
+      pdf.rect(0,0,pageWidth,headerH,'F');
+      const logoY = (headerH - portraitLogo.h - logoPad * 2) / 2;
+      const logoBoxW = drawPdfLogo(margin, logoY, portraitLogo);
+      const headerTextX = margin + logoBoxW + 4;
+      pdf.setTextColor(255);
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica','bold');
+      pdf.text('SCC Project Profitability Report', headerTextX, 10);
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica','normal');
+      pdf.setTextColor(217,232,246);
+      pdf.text('Fiscal Year ' + currentYear + '  ·  ' + today, pageWidth - margin, 10, {align:'right'});
+    };
+
+    let currentPage = 1;
+    let yPos = contentTop;
+    drawHeader();
+
+    const newPage = () => { pdf.addPage(); currentPage++; drawHeader(); yPos = contentTop; };
+
+    const placeCanvas = (canvas) => {
+      const pxPerMM = canvas.width / contentWidth;
+      const fullHeightMM = canvas.height / pxPerMM;
+      if (fullHeightMM <= (contentBottom - contentTop)){
+        if (yPos + fullHeightMM > contentBottom) newPage();
+        const imgData = canvas.toDataURL('image/jpeg', 0.92);
+        pdf.addImage(imgData,'JPEG', margin, yPos, contentWidth, fullHeightMM);
+        yPos += fullHeightMM + 5;
+      } else {
+        let srcOffset = 0;
+        while (srcOffset < canvas.height){
+          if (yPos >= contentBottom - 20) newPage();
+          const availMM = contentBottom - yPos;
+          const sliceMM = Math.min(availMM, (canvas.height - srcOffset) / pxPerMM);
+          const sliceHeightPX = Math.floor(sliceMM * pxPerMM);
+          const sc = document.createElement('canvas');
+          sc.width = canvas.width;
+          sc.height = sliceHeightPX;
+          const ctx = sc.getContext('2d');
+          ctx.fillStyle = '#f9f9f9';
+          ctx.fillRect(0,0,sc.width,sc.height);
+          ctx.drawImage(canvas, 0, -srcOffset);
+          const imgData = sc.toDataURL('image/jpeg', 0.92);
+          pdf.addImage(imgData,'JPEG', margin, yPos, contentWidth, sliceHeightPX / pxPerMM);
+          srcOffset += sliceHeightPX;
+          yPos += sliceHeightPX / pxPerMM + 2;
+          if (srcOffset < canvas.height) newPage();
+        }
+        yPos += 4;
+      }
+    };
+
+    const pieces = [];
+    const kpi = document.querySelector('.kpi-grid');
+    if (kpi) pieces.push({label:'Key Performance Indicators', el:kpi});
+    document.querySelectorAll('main.container > .section').forEach(s => {
+      const t = (s.querySelector('.section-title') && s.querySelector('.section-title').textContent) || 'Section';
+      if (/project register/i.test(t)) return;
+      pieces.push({label:t, el:s});
+    });
+
+    const captureOpts = {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#f9f9f9',
+      ignoreElements: (el) => {
+        if (!el || !el.classList) return false;
+        if (el.classList.contains('pdf-overlay')) return true;
+        if (el.classList.contains('chart-fullscreen-btn')) return true;
+        if (el.hasAttribute && el.hasAttribute('data-html2canvas-ignore')) return true;
+        return false;
+      }
+    };
+
+    for (let i=0; i<pieces.length; i++){
+      setStatus('Capturing: ' + pieces[i].label + ' (' + (i+1) + '/' + pieces.length + ')');
+      await new Promise(r => setTimeout(r, 60));
+      try {
+        const canvas = await html2canvas(pieces[i].el, captureOpts);
+        placeCanvas(canvas);
+      } catch (err){
+        console.warn('Skipped ' + pieces[i].label + ':', err);
+      }
+    }
+
+    setStatus('Rendering project register…');
+    await new Promise(r => setTimeout(r, 50));
+    if (typeof pdf.autoTable === 'function'){
+      const num = (v) => typeof v === 'number' && isFinite(v) ? v : 0;
+      const projects = [...DATA[currentYear].projects].sort((a,b) =>
+        String(a.job||'').localeCompare(String(b.job||''), undefined, {numeric:true}));
+
+      pdf.addPage('a4', 'l');
+      const drawLandscapeHeader = () => {
+        const pw = pdf.internal.pageSize.getWidth();
+        pdf.setFillColor(22,46,81);
+        pdf.rect(0,0,pw,headerH,'F');
+        const logoY = (headerH - landscapeLogo.h - logoPad * 2) / 2;
+        const logoBoxW = drawPdfLogo(margin, logoY, landscapeLogo);
+        const regTextX = margin + logoBoxW + 4;
+        pdf.setTextColor(255);
+        pdf.setFontSize(10);
+        pdf.setFont('helvetica','bold');
+        pdf.text('SCC Project Profitability Report — Project Register', regTextX, 10);
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica','normal');
+        pdf.setTextColor(217,232,246);
+        pdf.text('Fiscal Year ' + currentYear + '  ·  ' + today, pw - margin, 10, {align:'right'});
+      };
+      drawLandscapeHeader();
+      pdf.setTextColor(22,46,81);
+      pdf.setFontSize(13);
+      pdf.setFont('helvetica','bold');
+      pdf.text('Project Register — by Job #', margin, headerH + 8);
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica','normal');
+      pdf.setTextColor(86,92,101);
+      pdf.text(projects.length + ' projects · Sorted by Job # ascending · All values in USD', margin, headerH + 13);
+
+      pdf.autoTable({
+        startY: headerH + 18,
+        head: [['Job #','Project Name','% Compl','Contract','Cost','Profit','Margin','Invoiced','Pmt Recd','A/R']],
+        body: projects.map(p => [
+          String(p.job ?? ''),
+          p.name || '',
+          ((p.pct_compl||0)*100).toFixed(0) + '%',
+          fmt$full(num(p.contract)),
+          fmt$full(num(p.cost)),
+          fmt$full(num(p.profit)),
+          fmtPct(p.profit_pct),
+          typeof p.invoiced === 'number' ? fmt$full(p.invoiced) : (p.invoiced || '—'),
+          typeof p.pmt_recd === 'number' ? fmt$full(p.pmt_recd) : (p.pmt_recd || '—'),
+          fmt$full(num(p.invoiced) - num(p.pmt_recd))
+        ]),
+        styles: {fontSize:7.5, cellPadding:1.6, lineColor:[223,225,226], lineWidth:0.1, overflow:'linebreak', valign:'middle'},
+        headStyles: {fillColor:[22,46,81], textColor:255, fontStyle:'bold', fontSize:8, halign:'left'},
+        alternateRowStyles: {fillColor:[249,249,249]},
+        columnStyles: {
+          0: {fontStyle:'bold', textColor:[0,94,162], cellWidth:18},
+          1: {cellWidth:65},
+          2: {halign:'right', cellWidth:18},
+          3: {halign:'right', cellWidth:25},
+          4: {halign:'right', cellWidth:25},
+          5: {halign:'right', cellWidth:25},
+          6: {halign:'right', cellWidth:20},
+          7: {halign:'right', cellWidth:30},
+          8: {halign:'right', cellWidth:30},
+          9: {halign:'right', cellWidth:25}
+        },
+        margin: {left:margin, right:margin, top:headerH+6, bottom:footerH+4},
+        didParseCell: (data) => {
+          if (data.section !== 'body') return;
+          const txt = (data.cell.text && data.cell.text[0]) || '';
+          if (data.column.index === 5){
+            if (txt.indexOf('-') === 0){ data.cell.styles.textColor = [181,9,9]; data.cell.styles.fontStyle = 'bold'; }
+            else if (txt && txt !== '—' && txt !== '$0'){ data.cell.styles.textColor = [33,110,31]; data.cell.styles.fontStyle = 'bold'; }
+          }
+          if (data.column.index === 6 && txt.indexOf('-') === 0){
+            data.cell.styles.textColor = [181,9,9]; data.cell.styles.fontStyle = 'bold';
+          }
+          if (data.column.index === 9){
+            const v = parseFloat(txt.replace(/[$,]/g,''));
+            if (!isNaN(v) && v > 1000){ data.cell.styles.textColor = [192,86,0]; data.cell.styles.fontStyle = 'bold'; }
+          }
+        },
+        didDrawPage: (data) => { if (data.pageNumber > 1) drawLandscapeHeader(); }
+      });
+    }
+
+    setStatus('Finalizing pages…');
+    const totalPages = pdf.internal.getNumberOfPages();
+    for (let p=1; p<=totalPages; p++){
+      pdf.setPage(p);
+      const pw = pdf.internal.pageSize.getWidth();
+      const ph = pdf.internal.pageSize.getHeight();
+      pdf.setDrawColor(223,225,226);
+      pdf.line(margin, ph - footerH + 2, pw - margin, ph - footerH + 2);
+      pdf.setTextColor(86,92,101);
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica','normal');
+      pdf.text('Confidential · Internal Management Reporting · Job # is the primary reference key', margin, ph - 9);
+      pdf.text('Page ' + p + ' of ' + totalPages, pw - margin, ph - 9, {align:'right'});
+      drawPdfDeveloperCredit(pdf, pw, ph, footerH);
+    }
+
+    setStatus('Saving file…');
+    pdf.save('SCC_Profitability_FY' + currentYear + '_' + today + '.pdf');
+
+  } catch (err){
+    console.error('PDF export failed:', err);
+    alert('PDF export failed: ' + (err.message || err));
+  } finally {
+    document.body.classList.remove('pdf-exporting');
+    btn.disabled = false;
+    overlay.remove();
+  }
+}
+
+document.getElementById('exportPdfBtn').addEventListener('click', exportPDF);
+
+setupFullscreen();
+bootstrap();
+</script>
+</body>
+</html>

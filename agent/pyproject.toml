@@ -1,0 +1,37 @@
+[project]
+name = "scc-agent"
+version = "0.1.0"
+description = "SCC Profitability file-watch agent"
+requires-python = ">=3.12"
+dependencies = [
+    "watchdog>=4.0",
+    "requests>=2.32",
+    "tomli>=2.0; python_version<'3.11'",
+    "pywin32>=306; sys_platform=='win32'",
+    "sentry-sdk>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+    "pyinstaller>=6.5",
+]
+
+[project.scripts]
+scc-agent = "scc_agent.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["scc_agent*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]
