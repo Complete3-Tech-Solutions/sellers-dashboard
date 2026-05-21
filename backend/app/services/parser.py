@@ -271,6 +271,8 @@ def parse_project_list_blocks(
                     cost=cost,
                     profit=profit,
                     profit_pct=profit_pct,
+                    invoiced=to_number(r[14]) if len(r) > 14 else None,
+                    pmt_recd=to_number(r[16]) if len(r) > 16 else None,
                     last_month=month_name,
                 )
             )
@@ -278,6 +280,48 @@ def parse_project_list_blocks(
             log.warning("skipping bad project row: %s", exc)
 
     return projects, monthly
+
+
+def parse_overhead_detail(rows: list[list[Any]]) -> list[OverheadRow]:
+    """The right-hand side of each PS SCC workbook has a monthly overhead block:
+
+        Month     | Overhead | Computers | Furniture | Total
+        January   | 25014.98 |          |          | 25014.98
+        February  | 26285.30 |          |          | 26285.30
+        ...
+
+    Find the header by scanning every row for five consecutive cells matching
+    ``[month, overhead, computers, furniture, total]`` (any column offset), then
+    read up to 12 months below it.
+    """
+    out: list[OverheadRow] = []
+    for ri, row in enumerate(rows):
+        for ci in range(len(row) - 4):
+            window = [_norm(row[ci + k]) for k in range(5)]
+            if window == ["month", "overhead", "computers", "furniture", "total"]:
+                for dr in range(1, 13):
+                    if ri + dr >= len(rows):
+                        break
+                    drow = rows[ri + dr]
+                    if ci >= len(drow):
+                        break
+                    month_cell = drow[ci]
+                    if not isinstance(month_cell, str):
+                        break
+                    name = month_cell.strip()
+                    if name not in MONTHS:
+                        break
+                    out.append(
+                        OverheadRow(
+                            month=name,
+                            overhead=to_number(drow[ci + 1]) if ci + 1 < len(drow) else None,
+                            computers=to_number(drow[ci + 2]) if ci + 2 < len(drow) else None,
+                            furniture=to_number(drow[ci + 3]) if ci + 3 < len(drow) else None,
+                            total=to_number(drow[ci + 4]) if ci + 4 < len(drow) else None,
+                        )
+                    )
+                return out
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -387,14 +431,17 @@ def parse_overhead(rows: list[list[Any]]) -> list[OverheadRow]:
 # --------------------------------------------------------------------------- #
 
 
-def parse_workbook(path: pathlib.Path) -> tuple[list[ProjectRow], list[MonthlyRow]]:
+def parse_workbook(
+    path: pathlib.Path,
+) -> tuple[list[ProjectRow], list[MonthlyRow], list[OverheadRow]]:
     """Parse one workbook. Tries the SCC stacked-monthly-blocks format first,
     then falls back to the legacy single-header format used by the dev seed."""
     rows = _all_rows(path)
     projects, monthly = parse_project_list_blocks(rows)
+    overhead = parse_overhead_detail(rows)
     if projects:
-        return projects, monthly
-    return parse_profitability_single_header(rows), []
+        return projects, monthly, overhead
+    return parse_profitability_single_header(rows), [], []
 
 
 def compute_monthly_from_projects(
@@ -492,7 +539,7 @@ def parse_files_for_year(files: list[pathlib.Path], fiscal_year: int) -> ParsedS
             log.info("skipping template file %s", path.name)
             continue
         try:
-            projects, monthly = parse_workbook(path)
+            projects, monthly, overhead = parse_workbook(path)
         except Exception:
             log.exception("failed to parse %s", path.name)
             continue
@@ -502,6 +549,11 @@ def parse_files_for_year(files: list[pathlib.Path], fiscal_year: int) -> ParsedS
         for m in monthly:
             by_m[m.month] = m
         block_monthly = list(by_m.values())
+        # Overhead detail: later file wins per month.
+        oh_by_m = {o.month: o for o in snap.overhead_detail}
+        for o in overhead:
+            oh_by_m[o.month] = o
+        snap.overhead_detail = list(oh_by_m.values())
 
     snap.projects = _dedupe_projects(snap.projects)
     snap.monthly = compute_monthly_from_projects(
