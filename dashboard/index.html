@@ -148,14 +148,6 @@ body{
 .q-card.best{border-top:3px solid var(--success);background:linear-gradient(180deg, var(--success-lighter) 0%, var(--white) 50%)}
 .q-tag{font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--base-dark);font-weight:700;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
 .q-tag .best-pill{font-size:9px;color:var(--success-dark);background:var(--success-lighter);border:1px solid var(--success);padding:1px 6px;letter-spacing:0.05em}
-.q-card.ongoing{border-top:3px solid var(--warning);background:linear-gradient(180deg, var(--warning-lighter) 0%, var(--white) 50%)}
-.q-tag .ongoing-pill{font-size:9px;color:var(--warning-dark);background:var(--warning-lighter);border:1px solid var(--warning);padding:1px 6px;letter-spacing:0.05em}
-.q-through-note{font-size:11px;color:var(--base-dark);margin-top:8px;font-style:italic}
-.pre-hero-wrap{background:var(--off-white);border-bottom:1px solid var(--base-lighter)}
-.pre-hero-container{max-width:1500px;margin:0 auto;padding:24px 28px}
-.pre-section{margin-bottom:20px}
-.pre-section:last-child{margin-bottom:0}
-.q-grid-single{display:grid;grid-template-columns:minmax(200px,260px);gap:12px;margin-bottom:14px}
 .q-sales{font-family:'Roboto Mono',monospace;font-weight:600;font-size:22px;color:var(--ink);letter-spacing:-0.01em}
 .q-grid-stats{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:12px;font-family:'Roboto Mono',monospace}
 .q-grid-stats .row{display:flex;justify-content:space-between;color:var(--base-dark)}
@@ -277,24 +269,6 @@ body.has-fullscreen{overflow:hidden}
     </div>
   </div>
 </header>
-<div id="preHeroWrap" class="pre-hero-wrap" style="display:none">
-  <div class="pre-hero-container">
-    <section class="pre-section">
-      <div class="section-head">
-        <div class="section-title">Completed Quarters</div>
-        <div class="section-meta" id="completedQMeta">—</div>
-      </div>
-      <div class="q-grid" id="completedQCards"></div>
-    </section>
-    <section class="pre-section">
-      <div class="section-head">
-        <div class="section-title">Ongoing Quarter</div>
-        <div class="section-meta" id="ongoingQMeta">In Progress</div>
-      </div>
-      <div class="q-grid-single" id="ongoingQCard"></div>
-    </section>
-  </div>
-</div>
 <section class="hero">
   <div class="hero-inner">
     <div>
@@ -317,7 +291,7 @@ body.has-fullscreen{overflow:hidden}
     <div class="kpi"><div class="kpi-label">Avg Contract</div><div class="kpi-value" id="kpi-avg">—</div><div class="kpi-delta">per active job</div></div>
   </div>
   <section class="section">
-    <div class="section-head"><div class="section-title">Quarterly Performance</div><div class="section-meta" id="qRangeMeta">Q1 → Q4</div></div>
+    <div class="section-head"><div class="section-title">Quarterly Performance</div><div class="section-meta">Q1 → Q4</div></div>
     <div class="q-grid" id="qCards"></div>
     <div class="grid grid-3">
       <div class="card"><div class="card-head"><div class="card-title">Sales by Quarter</div><div class="card-tag">Revenue</div></div><div class="card-sub">Invoiced volume per period</div><div class="chart-wrap"><canvas id="qSalesChart"></canvas></div></div>
@@ -567,20 +541,9 @@ function renderYear(year){
   currentYear = year;
   document.getElementById('hero-year').textContent = year;
   const d = DATA[year];
-  const v = getVisibleSlice(d);
-
-  renderPreHeroSections(d);
-  renderKPIs(d);
-  renderQuarterCards(v);
-
-  const qm = document.getElementById('qRangeMeta');
-  if (qm) qm.textContent = v.quarterly.length
-    ? v.quarterly[0].quarter + ' → ' + v.quarterly[v.quarterly.length-1].quarter
-    : '(no completed quarters)';
-
-  clearCharts();
-  renderQSalesChart(v); renderQStackChart(v); renderQMarginChart(v);
-  renderMTrendChart(v); renderMCumChart(v); renderOhStackChart(v); renderMNetChart(v);
+  renderKPIs(d); renderQuarterCards(d); clearCharts();
+  renderQSalesChart(d); renderQStackChart(d); renderQMarginChart(d);
+  renderMTrendChart(d); renderMCumChart(d); renderOhStackChart(d); renderMNetChart(d);
   renderTopContractChart(d); renderTopProfitChart(d);
   renderSizePieChart(d); renderCompletePieChart(d); renderMarginBandChart(d); renderParetoChart(d);
   renderScatterChart(d); renderCashChart(d);
@@ -602,12 +565,22 @@ function renderKPIs(d){
   document.getElementById('kpi-avg').textContent = fmt$(avg);
 }
 
-function renderQuarterCards(v){
-  if (!v.quarterly.length) { document.getElementById('qCards').innerHTML = ''; return; }
-  const maxNp = Math.max(...v.quarterly.map(q=>q.net_profit));
-  document.getElementById('qCards').innerHTML = v.quarterly.map(q =>
-    qCardHTML(q, q.net_profit === maxNp, false)
-  ).join('');
+function renderQuarterCards(d){
+  const maxNp = Math.max(...d.quarterly.map(q=>q.net_profit));
+  document.getElementById('qCards').innerHTML = d.quarterly.map(q => `
+    <div class="q-card ${q.net_profit === maxNp ? 'best' : ''}">
+      <div class="q-tag"><span>${q.quarter}</span>${q.net_profit === maxNp ? '<span class="best-pill">Best Net</span>' : ''}</div>
+      <div class="q-sales">${fmt$(q.sales)}</div>
+      <div class="q-grid-stats">
+        <div class="row"><span>Gross $</span><span class="v">${fmt$(q.gross_profit)}</span></div>
+        <div class="row"><span>Gross %</span><span class="v">${fmtPct(q.gross_pct)}</span></div>
+        <div class="row"><span>OH $</span><span class="v">${fmt$(q.overhead)}</span></div>
+        <div class="row"><span>OH %</span><span class="v">${fmtPct(q.overhead_pct)}</span></div>
+        <div class="row np"><span>Net $</span><span class="v">${fmt$(q.net_profit)}</span></div>
+        <div class="row np"><span>Net %</span><span class="v">${fmtPct(q.net_pct)}</span></div>
+      </div>
+    </div>
+  `).join('');
 }
 
 function renderQSalesChart(d){
@@ -961,86 +934,6 @@ accSel.addEventListener('change', () => {
 const today = new Date().toISOString().slice(0,10);
 document.getElementById('genDate').textContent = today;
 document.getElementById('hero-date').textContent = today;
-
-const MONTH_ORDER_JS = ["January","February","March","April","May","June",
-                        "July","August","September","October","November","December"];
-const Q_LAST_MONTH  = { Q1:3, Q2:6, Q3:9, Q4:12 };
-const Q_FIRST_MONTH = { Q1:1, Q2:4, Q3:7, Q4:10 };
-
-function quarterStatus(qLabel, year) {
-  const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth() + 1;
-  if (year < y) return 'past';
-  if (year > y) return 'future';
-  if (Q_LAST_MONTH[qLabel] < m)  return 'past';
-  if (Q_FIRST_MONTH[qLabel] > m) return 'future';
-  return 'current';
-}
-function currentQuarterLabel() {
-  const m = new Date().getMonth() + 1;
-  return Object.keys(Q_FIRST_MONTH).find(q => m >= Q_FIRST_MONTH[q] && m <= Q_LAST_MONTH[q]);
-}
-function lastElapsedMonth() {
-  return MONTH_ORDER_JS[new Date().getMonth()];
-}
-
-function qCardHTML(q, isBest, isOngoing) {
-  const cls = isBest ? 'best' : isOngoing ? 'ongoing' : '';
-  const pill = isBest
-    ? '<span class="best-pill">Best Net</span>'
-    : isOngoing ? '<span class="ongoing-pill">In Progress</span>' : '';
-  return `<div class="q-card ${cls}">
-    <div class="q-tag"><span>${q.quarter}</span>${pill}</div>
-    <div class="q-sales">${fmt$(q.sales)}</div>
-    <div class="q-grid-stats">
-      <div class="row"><span>Gross $</span><span class="v">${fmt$(q.gross_profit)}</span></div>
-      <div class="row"><span>Gross %</span><span class="v">${fmtPct(q.gross_pct)}</span></div>
-      <div class="row"><span>OH $</span><span class="v">${fmt$(q.overhead)}</span></div>
-      <div class="row"><span>OH %</span><span class="v">${fmtPct(q.overhead_pct)}</span></div>
-      <div class="row np"><span>Net $</span><span class="v">${fmt$(q.net_profit)}</span></div>
-      <div class="row np"><span>Net %</span><span class="v">${fmtPct(q.net_pct)}</span></div>
-    </div>
-    ${isOngoing ? `<div class="q-through-note">Data through ${lastElapsedMonth()}</div>` : ''}
-  </div>`;
-}
-
-function getVisibleSlice(d) {
-  const thisYear = new Date().getFullYear();
-  const thisMonth = new Date().getMonth() + 1;
-  if (d.year !== thisYear) return { quarterly: d.quarterly, monthly: d.monthly };
-  return {
-    quarterly: d.quarterly.filter(q => quarterStatus(q.quarter, d.year) === 'past'),
-    monthly:   d.monthly.filter(m => {
-      const idx = MONTH_ORDER_JS.indexOf(m.month);
-      return idx >= 0 && (idx + 1) <= thisMonth;
-    }),
-  };
-}
-
-function renderPreHeroSections(d) {
-  const wrap = document.getElementById('preHeroWrap');
-  const thisYear = new Date().getFullYear();
-  if (d.year !== thisYear) { wrap.style.display = 'none'; return; }
-  wrap.style.display = '';
-
-  const completed = d.quarterly.filter(q => quarterStatus(q.quarter, d.year) === 'past');
-  const ongoing   = d.quarterly.filter(q => quarterStatus(q.quarter, d.year) === 'current');
-
-  document.getElementById('completedQMeta').textContent =
-    completed.length ? completed.map(q => q.quarter).join(', ') : 'None yet';
-  const curQ = currentQuarterLabel();
-  document.getElementById('ongoingQMeta').textContent =
-    curQ ? `${curQ} — data through ${lastElapsedMonth()}` : 'In Progress';
-
-  const maxNp = completed.length ? Math.max(...completed.map(q => q.net_profit)) : null;
-  document.getElementById('completedQCards').innerHTML = completed.length
-    ? completed.map(q => qCardHTML(q, q.net_profit === maxNp, false)).join('')
-    : '<p style="color:var(--base-dark);font-size:13px;padding:8px 0">No completed quarters yet this year.</p>';
-
-  document.getElementById('ongoingQCard').innerHTML = ongoing.length
-    ? qCardHTML(ongoing[0], false, true)
-    : '<p style="color:var(--base-dark);font-size:13px;padding:8px 0">Not yet started.</p>';
-}
 
 const EXPAND_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>';
 const COLLAPSE_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4"/></svg>';
