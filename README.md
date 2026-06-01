@@ -47,8 +47,22 @@ On the backend service → **Variables** tab, add:
 | -------- | ----- | ------- |
 | `ENV` | `dev` | Lets the app auto-generate ephemeral JWT keys and a Fernet key on boot — fine for testing. For production, see [Production variables](#production-variables-optional). |
 | `AUTO_SEED` | `true` | On first boot, seeds a "Dev Tenant" with the 2013 dataset so you can log in immediately. Remove this var after the first successful deploy. |
+| `AUTO_SEED_ADMIN` | `true` | Alternative to `AUTO_SEED` for a clean tenant with **no demo data** — seeds one admin + one member user (see [Seeding login users](#seeding-login-users) below). Idempotent; safe to leave on. |
 | `COOKIE_SECURE` | `true` | Railway serves over HTTPS — cookies should be Secure. |
 | `ALLOWED_ORIGINS` | `https://<your-railway-domain>.up.railway.app` | Same origin as the deployed service. |
+
+#### Seeding login users
+
+`AUTO_SEED_ADMIN=true` runs [`app.seed_admin`](backend/app/seed_admin.py) on startup, creating two users in a single tenant so you can log in on a fresh deploy without the 2013 demo data:
+
+| Variable | Value | Purpose |
+| -------- | ----- | ------- |
+| `SEED_TENANT` | `SCC` | Tenant display name (slug is derived from it). |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | your admin login | Seeded with role `admin` → lands on `/admin`. |
+| `USER_EMAIL` / `USER_PASSWORD` | your member login | Seeded with role `member` → lands on `/`. |
+| `SEED_RESET_PASSWORD` | `true` (optional) | Reset the seeded passwords to the current env values on the next boot. |
+
+Outside dev (`ENV=prod`), `ADMIN_PASSWORD` and `USER_PASSWORD` are **required** — the seeder refuses to fall back to a weak default. Generate strong values with `python -c "import secrets,string; a=string.ascii_letters+string.digits+'!@#%^&*-_'; print(''.join(secrets.choice(a) for _ in range(24)))"`. The seed is idempotent: re-runs are a no-op unless `SEED_RESET_PASSWORD=true`. Once logged in, the admin can add more people from **Admin → Users → Invite user**.
 
 ### 4. Generate a public domain
 
@@ -215,7 +229,8 @@ sellers-dashboard/
 │   │   ├── routers/           ← /auth, /api/dashboard, /api/snapshot, /api/admin
 │   │   ├── services/          ← Excel parser, storage (R2 + local fallback), rate limit
 │   │   ├── workers/           ← RQ job (parser also runs inline when PARSER_INLINE=true)
-│   │   ├── seed.py            ← `python -m app.seed`
+│   │   ├── seed.py            ← `python -m app.seed` (2013 demo dataset)
+│   │   ├── seed_admin.py      ← `python -m app.seed_admin` (admin + member, no demo data)
 │   │   └── seed_data.json     ← embedded 2013 dataset
 │   └── tests/
 ├── dashboard/                 ← served by the backend as static files
@@ -279,7 +294,6 @@ The mode is a query param (`?accounting=raw\|poc\|closeout`) on `/api/dashboard`
 - **Parser runs inline** at commit time (single Railway service is fine). For production, set `PARSER_INLINE=false` and run a second Railway service with start command `rq worker --url $REDIS_URL snapshots`.
 - **Object storage falls back to local disk** when R2 env vars aren't set — uploads survive within a single container run but are lost on redeploy. Add R2 before relying on the audit trail.
 - **JWT keys auto-generate** at startup when `ENV=dev`. Sessions invalidate on every restart. Set `JWT_PRIVATE_KEY_PEM` + `JWT_PUBLIC_KEY_PEM` for stable auth.
-- **No admin UI yet** — admin endpoints exist (`/api/admin/*`) and work via curl/Postman; HTML screens are on the roadmap (Phase 7).
 
 ---
 
@@ -288,7 +302,7 @@ The mode is a query param (`?accounting=raw\|poc\|closeout`) on `/api/dashboard`
 - [x] Phase 0–3: scaffolding, auth, dashboard API, ingestion API
 - [x] Phase 4: Excel parser + RQ worker
 - [x] Phase 5–6: agent, installer, PyInstaller build
-- [ ] Phase 7: Admin UI screens
+- [x] Phase 7: Admin UI screens (API keys, users, snapshots, audit log, settings)
 - [ ] Phase 8: Hardening (TOTP UX, IP allowlist UX, RLS cross-tenant test, Sentry, WAF, backups)
 - [ ] Phase 9: Customer pilot
 

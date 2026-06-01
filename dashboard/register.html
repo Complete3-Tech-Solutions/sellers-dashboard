@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Create account · SCC Profitability</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#1b1b1b; --base-dark:#565c65; --base-lighter:#dfe1e2; --off-white:#f9f9f9;
+  --primary-darker:#162e51; --primary:#005ea2; --primary-dark:#1a4480;
+  --primary-lighter:#d9e8f6; --error:#d83933; --error-lighter:#f3e1e4;
+  --success:#00a91c; --success-lighter:#ecf3ec;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px}
+body{
+  font-family:'Source Sans 3','Helvetica Neue',Helvetica,Arial,sans-serif;
+  background:var(--off-white);color:var(--ink);
+  min-height:100vh;display:flex;align-items:center;justify-content:center;
+  -webkit-font-smoothing:antialiased;
+}
+.top-strip{background:var(--primary-darker);color:#fff;padding:8px 0;font-size:12px;position:fixed;top:0;left:0;right:0;text-align:center}
+.card{
+  width:100%;max-width:440px;background:#fff;
+  border:1px solid var(--base-lighter);padding:32px 36px 30px;
+  box-shadow:0 2px 8px rgba(22,46,81,0.05);
+}
+.brand{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.brand img{height:42px;max-width:160px;object-fit:contain}
+.brand .text{font-size:13px;color:var(--base-dark);line-height:1.2}
+.brand .text strong{display:block;font-size:15px;color:var(--ink)}
+h1{font-size:22px;font-weight:700;margin:6px 0 4px;color:var(--primary-darker)}
+.sub{font-size:13px;color:var(--base-dark);margin-bottom:22px}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.field label{font-size:13px;font-weight:600;color:var(--ink)}
+.field input{
+  font-family:inherit;font-size:15px;
+  border:1px solid var(--base-dark);padding:9px 12px;
+  background:#fff;color:var(--ink);outline:none;
+}
+.field input:focus{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-lighter)}
+.field .hint{font-size:11px;color:var(--base-dark)}
+.actions{display:flex;align-items:center;justify-content:flex-end;margin-top:8px}
+button[type="submit"]{
+  background:var(--primary);color:#fff;border:1px solid var(--primary);
+  font-family:inherit;font-size:15px;font-weight:600;
+  padding:9px 18px;cursor:pointer;outline:none;
+  transition:background .15s;
+}
+button[type="submit"]:hover{background:var(--primary-dark)}
+button[type="submit"]:disabled{opacity:.6;cursor:wait}
+.alert{
+  padding:9px 12px;font-size:13px;margin-bottom:14px;display:none;
+}
+.alert-error{background:var(--error-lighter);border:1px solid var(--error);color:var(--error)}
+.alert-success{background:var(--success-lighter);border:1px solid var(--success);color:var(--success)}
+.foot{margin-top:22px;font-size:12px;color:var(--base-dark);text-align:center}
+.foot a{color:var(--primary);text-decoration:none}
+.foot a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="top-strip">SCC Profitability Reporting · Create your organization</div>
+<main class="card" role="main">
+  <div class="brand">
+    <img src="/assets/scc.png" alt="">
+    <div class="text"><strong>Profitability</strong>Project Reporting</div>
+  </div>
+  <h1>Create account</h1>
+  <p class="sub">Set up your organization and admin account.</p>
+  <div id="err" class="alert alert-error" role="alert"></div>
+  <div id="ok" class="alert alert-success" role="status"></div>
+  <form id="regForm" novalidate>
+    <div class="field">
+      <label for="orgName">Organization name</label>
+      <input id="orgName" name="orgName" type="text" required maxlength="128" autofocus placeholder="Acme Construction Co.">
+    </div>
+    <div class="field">
+      <label for="email">Admin email</label>
+      <input id="email" name="email" type="email" required autocomplete="email">
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" required minlength="10" autocomplete="new-password">
+      <span class="hint">Minimum 10 characters.</span>
+    </div>
+    <div class="actions">
+      <button type="submit" id="submitBtn">Create account</button>
+    </div>
+  </form>
+  <div class="foot">Already have an account? <a href="/login">Sign in</a></div>
+</main>
+<script>
+const form = document.getElementById('regForm');
+const errEl = document.getElementById('err');
+const okEl = document.getElementById('ok');
+const btn = document.getElementById('submitBtn');
+
+function showErr(msg){ errEl.textContent=msg; errEl.style.display='block'; okEl.style.display='none'; }
+function showOk(msg){ okEl.textContent=msg; okEl.style.display='block'; errEl.style.display='none'; }
+function clear(){ errEl.style.display='none'; okEl.style.display='none'; }
+
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  clear();
+  const tenant_name = document.getElementById('orgName').value.trim();
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  if(!tenant_name || !email || !password){ showErr('All fields are required.'); return; }
+  if(password.length < 10){ showErr('Password must be at least 10 characters.'); return; }
+  btn.disabled = true;
+  try {
+    const r = await fetch('/auth/register-tenant', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({tenant_name, email, password}),
+    });
+    if(r.ok){
+      showOk('Account created! Redirecting…');
+      setTimeout(()=>{ window.location='/admin'; }, 800);
+      return;
+    }
+    let detail = '';
+    try { detail = (await r.json()).detail || ''; } catch(_){}
+    if(r.status === 429 || detail === 'rate_limited')
+      showErr('Too many attempts. Please wait a moment and try again.');
+    else if(detail === 'email_in_use')
+      showErr('That email is already registered.');
+    else
+      showErr('Registration failed. Please try again.');
+  } catch(_) {
+    showErr('Network error. Please try again.');
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

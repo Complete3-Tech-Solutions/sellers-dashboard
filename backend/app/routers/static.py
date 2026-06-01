@@ -15,26 +15,51 @@ DASHBOARD_DIR = pathlib.Path(settings.dashboard_dir)
 DEFAULT_LOGO = DASHBOARD_DIR / "assets" / "scc.png"
 
 
-def _is_logged_in(access_token: str | None) -> bool:
+def _decode_token(access_token: str | None) -> dict | None:
     if not access_token:
-        return False
+        return None
     try:
-        decode_access_token(access_token)
-        return True
+        return decode_access_token(access_token)
     except Exception:
-        return False
+        return None
 
 
 @router.get("/", include_in_schema=False)
 async def root(access_token: str | None = Cookie(default=None)):
-    if not _is_logged_in(access_token):
-        return RedirectResponse(url="/login", status_code=307)
+    claims = _decode_token(access_token)
+    if not claims:
+        return RedirectResponse(url="/login", status_code=302)
     return FileResponse(DASHBOARD_DIR / "index.html")
 
 
 @router.get("/login", include_in_schema=False)
-async def login_page():
+async def login_page(access_token: str | None = Cookie(default=None)):
+    claims = _decode_token(access_token)
+    if claims:
+        if claims.get("role") == "admin":
+            return RedirectResponse(url="/admin", status_code=302)
+        return RedirectResponse(url="/", status_code=302)
     return FileResponse(DASHBOARD_DIR / "login.html")
+
+
+@router.get("/admin", include_in_schema=False)
+async def admin_page(access_token: str | None = Cookie(default=None)):
+    claims = _decode_token(access_token)
+    if not claims:
+        return RedirectResponse(url="/login", status_code=302)
+    if claims.get("role") != "admin":
+        return RedirectResponse(url="/", status_code=302)
+    return FileResponse(DASHBOARD_DIR / "admin.html")
+
+
+@router.get("/register", include_in_schema=False)
+async def register_page(access_token: str | None = Cookie(default=None)):
+    claims = _decode_token(access_token)
+    if claims:
+        if claims.get("role") == "admin":
+            return RedirectResponse(url="/admin", status_code=302)
+        return RedirectResponse(url="/", status_code=302)
+    return FileResponse(DASHBOARD_DIR / "register.html")
 
 
 @router.get("/assets/{path:path}", include_in_schema=False)
