@@ -16,6 +16,7 @@ from app.schemas.admin import (
     ApiKeyOut,
     AuditLogOut,
     SnapshotSummaryOut,
+    UserAdminOut,
     UserInviteIn,
 )
 from app.security import encrypt_secret, hash_password, new_api_key, sha256_hex
@@ -184,6 +185,27 @@ async def upload_logo(
     )
     await session.commit()
     return {"ok": True, "key": key}
+
+
+@router.get("/users", response_model=list[UserAdminOut])
+async def list_users(
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> list[UserAdminOut]:
+    res = await session.execute(
+        select(User).where(User.tenant_id == current.tenant_id).order_by(User.created_at)
+    )
+    return [
+        UserAdminOut(
+            id=u.id,
+            email=u.email,
+            role=u.role,
+            totp_enabled=u.totp_secret is not None,
+            last_login_at=u.last_login_at,
+            created_at=u.created_at,
+        )
+        for u in res.scalars().all()
+    ]
 
 
 @router.post("/users", status_code=201)

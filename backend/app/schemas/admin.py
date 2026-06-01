@@ -54,3 +54,12 @@ class UserInviteIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=10, max_length=256)
     role: str = Field(default="member", pattern="^(admin|member)$")
+
+
+class UserAdminOut(BaseModel):
+    id: uuid.UUID
+    email: str
+    role: str
+    totp_enabled: bool
+    last_login_at: datetime | None = None
+    created_at: datetime

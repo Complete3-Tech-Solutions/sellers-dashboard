@@ -42,6 +42,14 @@ async def lifespan(app: FastAPI):
             log.info("auto-seed complete")
         except Exception:
             log.exception("auto-seed failed (continuing)")
+    if os.environ.get("AUTO_SEED_ADMIN", "").lower() in {"1", "true", "yes"}:
+        try:
+            from app.seed_admin import main as seed_admin_main
+
+            await seed_admin_main()
+            log.info("auto-seed-admin complete")
+        except Exception:
+            log.exception("auto-seed-admin failed (continuing)")
     yield
 
 

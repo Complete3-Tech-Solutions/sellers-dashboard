@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin · SCC Profitability</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#1b1b1b; --base-darker:#3d4551; --base-dark:#565c65; --base:#71767a;
+  --base-light:#a9aeb1; --base-lighter:#dfe1e2; --base-lightest:#f0f0f0;
+  --white:#fff; --off-white:#f9f9f9;
+  --primary-darker:#162e51; --primary-dark:#1a4480; --primary:#005ea2;
+  --primary-lighter:#d9e8f6; --primary-lightest:#eff6fb;
+  --success:#00a91c; --success-lighter:#ecf3ec;
+  --warning:#e5a000; --warning-lighter:#faf3d1;
+  --error:#d83933; --error-lighter:#f3e1e4;
+  --sidebar-w:220px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px}
+body{
+  font-family:'Source Sans 3','Helvetica Neue',Helvetica,Arial,sans-serif;
+  background:var(--off-white);color:var(--ink);line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ── Top strip ── */
+.top-strip{
+  background:var(--primary-darker);color:#fff;
+  padding:6px 0;font-size:12px;position:fixed;top:0;left:0;right:0;z-index:100;
+}
+.top-strip-inner{max-width:100%;padding:0 24px;display:flex;align-items:center;gap:12px}
+.top-strip-inner .right{margin-left:auto;display:flex;align-items:center;gap:16px;font-size:12px}
+.top-strip-inner .right a{color:var(--primary-lighter);text-decoration:none}
+.top-strip-inner .right a:hover{text-decoration:underline}
+.badge-admin{
+  background:var(--warning);color:#1b1b1b;font-size:10px;font-weight:700;
+  padding:1px 7px;border-radius:3px;letter-spacing:.05em;text-transform:uppercase;
+}
+
+/* ── Layout ── */
+.layout{display:flex;min-height:100vh;padding-top:32px}
+
+/* ── Sidebar ── */
+.sidebar{
+  width:var(--sidebar-w);flex-shrink:0;
+  background:#fff;border-right:1px solid var(--base-lighter);
+  position:fixed;top:32px;bottom:0;overflow-y:auto;
+  padding:20px 0;
+}
+.sidebar .brand{
+  display:flex;align-items:center;gap:10px;padding:0 18px 18px;
+  border-bottom:1px solid var(--base-lighter);margin-bottom:12px;
+}
+.sidebar .brand img{height:36px;max-width:100px;object-fit:contain}
+.sidebar .brand .text{font-size:12px;color:var(--base-dark);line-height:1.3}
+.sidebar .brand .text strong{display:block;font-size:13px;color:var(--ink)}
+nav a{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 18px;font-size:14px;font-weight:600;color:var(--base-darker);
+  text-decoration:none;border-left:3px solid transparent;transition:background .1s;
+}
+nav a:hover{background:var(--primary-lightest)}
+nav a.active{
+  color:var(--primary-dark);background:var(--primary-lightest);
+  border-left-color:var(--primary);
+}
+nav .nav-icon{width:18px;text-align:center;font-size:15px;flex-shrink:0}
+nav .sep{height:1px;background:var(--base-lighter);margin:10px 18px}
+nav a.danger{color:var(--error)}
+nav a.danger:hover{background:var(--error-lighter)}
+
+/* ── Main content ── */
+.main{
+  margin-left:var(--sidebar-w);flex:1;
+  padding:28px 32px 48px;min-width:0;
+}
+.page-header{margin-bottom:24px}
+.page-header h1{font-size:22px;font-weight:700;color:var(--primary-darker)}
+.page-header p{font-size:14px;color:var(--base-dark);margin-top:3px}
+
+/* ── Section panels ── */
+.section{display:none}
+.section.active{display:block}
+
+/* ── Cards ── */
+.card{background:#fff;border:1px solid var(--base-lighter);padding:20px 24px;margin-bottom:20px}
+.card-title{font-size:15px;font-weight:700;color:var(--primary-darker);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+
+/* ── Tables ── */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{
+  background:var(--base-lightest);color:var(--base-darker);
+  font-weight:700;font-size:12px;letter-spacing:.04em;text-transform:uppercase;
+  padding:8px 12px;text-align:left;border-bottom:2px solid var(--base-lighter);
+}
+td{padding:9px 12px;border-bottom:1px solid var(--base-lightest);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--primary-lightest)}
+.mono{font-family:'Roboto Mono',monospace;font-size:12px}
+.pill{
+  display:inline-block;padding:2px 8px;border-radius:3px;
+  font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+}
+.pill-green{background:var(--success-lighter);color:var(--success)}
+.pill-red{background:var(--error-lighter);color:var(--error)}
+.pill-yellow{background:var(--warning-lighter);color:#7a5800}
+.pill-blue{background:var(--primary-lighter);color:var(--primary-dark)}
+.pill-grey{background:var(--base-lightest);color:var(--base-dark)}
+
+/* ── Forms ── */
+.form-row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:12px;font-weight:700;color:var(--ink)}
+.field input,.field select{
+  font-family:inherit;font-size:14px;
+  border:1px solid var(--base-dark);padding:7px 10px;
+  background:#fff;color:var(--ink);outline:none;min-width:180px;
+}
+.field input:focus,.field select:focus{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-lighter)}
+.field .hint{font-size:11px;color:var(--base-dark)}
+
+/* ── Buttons ── */
+.btn{
+  font-family:inherit;font-size:13px;font-weight:700;
+  padding:7px 16px;border:1px solid;cursor:pointer;outline:none;
+  transition:background .12s;white-space:nowrap;
+}
+.btn-primary{background:var(--primary);color:#fff;border-color:var(--primary)}
+.btn-primary:hover{background:var(--primary-dark)}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn-danger{background:#fff;color:var(--error);border-color:var(--error)}
+.btn-danger:hover{background:var(--error-lighter)}
+.btn-ghost{background:#fff;color:var(--primary);border-color:var(--primary-lighter)}
+.btn-ghost:hover{background:var(--primary-lightest)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* ── Alerts ── */
+.alert{padding:10px 14px;font-size:13px;margin-bottom:14px;display:none}
+.alert-error{background:var(--error-lighter);border:1px solid var(--error);color:var(--error)}
+.alert-success{background:var(--success-lighter);border:1px solid var(--success);color:var(--success)}
+.alert-info{background:var(--primary-lighter);border:1px solid var(--primary);color:var(--primary-dark)}
+
+/* ── Key reveal box ── */
+.key-box{
+  background:var(--base-lightest);border:1px solid var(--base-lighter);
+  padding:12px 16px;font-family:'Roboto Mono',monospace;font-size:12px;
+  word-break:break-all;margin-bottom:10px;color:var(--ink);
+}
+.key-reveal{display:none;margin-bottom:16px}
+
+/* ── Loading ── */
+.loading{color:var(--base);font-size:13px;padding:16px 0}
+.empty{color:var(--base);font-size:13px;padding:16px 0;font-style:italic}
+
+/* ── Modal ── */
+.modal-backdrop{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;
+  align-items:center;justify-content:center;
+}
+.modal-backdrop.open{display:flex}
+.modal{
+  background:#fff;border:1px solid var(--base-lighter);
+  width:100%;max-width:480px;padding:28px 28px 22px;position:relative;
+  max-height:90vh;overflow-y:auto;
+}
+.modal h2{font-size:17px;font-weight:700;color:var(--primary-darker);margin-bottom:16px}
+.modal-close{
+  position:absolute;top:14px;right:16px;background:none;border:none;
+  font-size:20px;cursor:pointer;color:var(--base-dark);line-height:1;
+}
+.modal-close:hover{color:var(--ink)}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;padding-top:14px;border-top:1px solid var(--base-lighter)}
+</style>
+</head>
+<body>
+
+<!-- Top strip -->
+<div class="top-strip">
+  <div class="top-strip-inner">
+    <span>SCC Profitability Reporting · Admin Panel</span>
+    <span class="badge-admin">Admin</span>
+    <div class="right">
+      <a href="/">← Dashboard</a>
+      <span id="topEmail" style="color:var(--base-lighter)"></span>
+      <a href="#" id="logoutBtn">Sign out</a>
+    </div>
+  </div>
+</div>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="/tenant-logo.png" alt="" onerror="this.onerror=null;this.src='/assets/scc.png'">
+      <div class="text"><strong>Profitability</strong>Admin Panel</div>
+    </div>
+    <nav id="sideNav">
+      <a href="#" class="nav-link active" data-section="keys">
+        <span class="nav-icon">🔑</span> API Keys
+      </a>
+      <a href="#" class="nav-link" data-section="users">
+        <span class="nav-icon">👥</span> Users
+      </a>
+      <a href="#" class="nav-link" data-section="snapshots">
+        <span class="nav-icon">📦</span> Snapshots
+      </a>
+      <a href="#" class="nav-link" data-section="audit">
+        <span class="nav-icon">📋</span> Audit Log
+      </a>
+      <div class="sep"></div>
+      <a href="#" class="nav-link" data-section="settings">
+        <span class="nav-icon">⚙️</span> Settings
+      </a>
+    </nav>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+
+    <!-- API Keys -->
+    <div id="sec-keys" class="section active">
+      <div class="page-header">
+        <h1>API Keys</h1>
+        <p>Keys are used by the desktop agent to authenticate uploads. The secret is shown only once.</p>
+      </div>
+      <div class="card">
+        <div class="card-title">Active keys
+          <button class="btn btn-primary btn-sm" style="margin-left:auto" id="newKeyBtn">+ New key</button>
+        </div>
+        <div id="keysAlert" class="alert"></div>
+        <div class="tbl-wrap">
+          <table id="keysTable">
+            <thead><tr>
+              <th>Label</th><th>Key ID</th><th>IP allowlist</th>
+              <th>Last used</th><th>Status</th><th></th>
+            </tr></thead>
+            <tbody id="keysTbody"><tr><td colspan="6" class="loading">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Users -->
+    <div id="sec-users" class="section">
+      <div class="page-header">
+        <h1>Users</h1>
+        <p>Manage who can access this tenant's dashboard.</p>
+      </div>
+      <div class="card">
+        <div class="card-title">Team members
+          <button class="btn btn-primary btn-sm" style="margin-left:auto" id="inviteBtn">+ Invite user</button>
+        </div>
+        <div id="usersAlert" class="alert"></div>
+        <div class="tbl-wrap">
+          <table id="usersTable">
+            <thead><tr>
+              <th>Email</th><th>Role</th><th>2FA</th><th>Last login</th><th>Joined</th>
+            </tr></thead>
+            <tbody id="usersTbody"><tr><td colspan="5" class="loading">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Snapshots -->
+    <div id="sec-snapshots" class="section">
+      <div class="page-header">
+        <h1>Snapshots</h1>
+        <p>File uploads from the desktop agent. Each snapshot is one sync session.</p>
+      </div>
+      <div class="card">
+        <div class="card-title">Recent snapshots (last 50)</div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th>ID</th><th>Status</th><th>Files</th><th>Size</th>
+              <th>Started</th><th>Committed</th><th>Parsed</th>
+            </tr></thead>
+            <tbody id="snapTbody"><tr><td colspan="7" class="loading">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audit Log -->
+    <div id="sec-audit" class="section">
+      <div class="page-header">
+        <h1>Audit Log</h1>
+        <p>Last 100 security-relevant events for this tenant.</p>
+      </div>
+      <div class="card">
+        <div class="card-title">Events</div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th>Action</th><th>Resource</th><th>Actor</th><th>IP</th><th>When</th>
+            </tr></thead>
+            <tbody id="auditTbody"><tr><td colspan="5" class="loading">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div id="sec-settings" class="section">
+      <div class="page-header">
+        <h1>Settings</h1>
+        <p>Tenant-level configuration.</p>
+      </div>
+      <div class="card" style="max-width:480px">
+        <div class="card-title">Logo</div>
+        <p style="font-size:13px;color:var(--base-dark);margin-bottom:14px">
+          PNG format, max 2 MB. Shown on the login page and agent installer.
+        </p>
+        <div id="logoAlert" class="alert"></div>
+        <div style="margin-bottom:14px">
+          <img id="logoPreview" src="/tenant-logo.png" alt="Current logo"
+               style="height:52px;max-width:200px;object-fit:contain;border:1px solid var(--base-lighter);padding:6px"
+               onerror="this.onerror=null;this.src='/assets/scc.png'">
+        </div>
+        <form id="logoForm">
+          <div class="field" style="margin-bottom:12px">
+            <label>New logo (PNG)</label>
+            <input type="file" id="logoFile" accept="image/png" required>
+          </div>
+          <button type="submit" class="btn btn-primary" id="logoBtn">Upload logo</button>
+        </form>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- New API Key modal -->
+<div class="modal-backdrop" id="newKeyModal">
+  <div class="modal">
+    <button class="modal-close" data-close="newKeyModal">×</button>
+    <h2>Create API key</h2>
+    <div id="keyCreateAlert" class="alert"></div>
+    <div id="keyReveal" class="key-reveal">
+      <div class="alert alert-info" style="display:block;margin-bottom:10px">
+        Copy this key now — it will <strong>never be shown again</strong>.
+      </div>
+      <div class="key-box" id="keyRevealText"></div>
+      <button class="btn btn-ghost btn-sm" id="copyKeyBtn">Copy to clipboard</button>
+    </div>
+    <div id="keyCreateForm">
+      <div class="field" style="margin-bottom:12px">
+        <label for="keyLabel">Label <span style="font-weight:400;color:var(--base-dark)">(e.g. "Office PC - John")</span></label>
+        <input type="text" id="keyLabel" maxlength="128" placeholder="My agent key" required>
+      </div>
+      <div class="field" style="margin-bottom:4px">
+        <label for="keyIp">IP allowlist <span style="font-weight:400;color:var(--base-dark)">(optional)</span></label>
+        <input type="text" id="keyIp" placeholder="192.168.1.10, 10.0.0.0/24">
+        <span class="hint">Comma-separated IPs. Leave blank to allow any IP.</span>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" data-close="newKeyModal">Cancel</button>
+        <button class="btn btn-primary" id="createKeyBtn">Create key</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Invite User modal -->
+<div class="modal-backdrop" id="inviteModal">
+  <div class="modal">
+    <button class="modal-close" data-close="inviteModal">×</button>
+    <h2>Invite user</h2>
+    <div id="inviteAlert" class="alert"></div>
+    <div class="field" style="margin-bottom:12px">
+      <label for="inviteEmail">Email</label>
+      <input type="email" id="inviteEmail" autocomplete="off" required>
+    </div>
+    <div class="field" style="margin-bottom:12px">
+      <label for="invitePassword">Temporary password</label>
+      <input type="password" id="invitePassword" minlength="10" autocomplete="new-password" required>
+      <span class="hint">Minimum 10 characters.</span>
+    </div>
+    <div class="field" style="margin-bottom:4px">
+      <label for="inviteRole">Role</label>
+      <select id="inviteRole">
+        <option value="member">Member — dashboard only</option>
+        <option value="admin">Admin — full admin panel access</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" data-close="inviteModal">Cancel</button>
+      <button class="btn btn-primary" id="inviteSubmitBtn">Invite</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── Utilities ── */
+const $ = id => document.getElementById(id);
+const fmt = {
+  date(iso){ if(!iso) return '—'; const d=new Date(iso); return d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); },
+  bytes(n){ if(!n) return '0 B'; const u=['B','KB','MB','GB']; let i=0; while(n>=1024&&i<3){n/=1024;i++;} return n.toFixed(i?1:0)+' '+u[i]; },
+  truncate(s,n=16){ return s.length>n ? s.slice(0,n)+'…' : s; },
+};
+
+function showAlert(id, msg, type='error'){
+  const el = $(id);
+  el.className = 'alert alert-'+type;
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+function hideAlert(id){ const el=$(id); if(el){ el.style.display='none'; } }
+
+async function api(method, path, body){
+  const opts = { method, credentials:'include', headers:{} };
+  if(body){ opts.headers['Content-Type']='application/json'; opts.body=JSON.stringify(body); }
+  const r = await fetch(path, opts);
+  if(r.status === 401){ window.location='/login'; throw new Error('unauthenticated'); }
+  return r;
+}
+
+/* ── Navigation ── */
+document.querySelectorAll('.nav-link').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const sec = a.dataset.section;
+    document.querySelectorAll('.nav-link').forEach(x => x.classList.remove('active'));
+    a.classList.add('active');
+    document.querySelectorAll('.section').forEach(x => x.classList.remove('active'));
+    $('sec-'+sec).classList.add('active');
+    loaders[sec]?.();
+  });
+});
+
+/* ── Logout ── */
+$('logoutBtn').addEventListener('click', async e => {
+  e.preventDefault();
+  await api('POST', '/auth/logout');
+  window.location = '/login';
+});
+
+/* ── Load current user ── */
+async function loadMe(){
+  try{
+    const r = await api('GET', '/auth/me');
+    if(r.ok){ const d=await r.json(); $('topEmail').textContent=d.email; }
+  } catch(_){}
+}
+
+/* ── API Keys ── */
+let keysLoaded = false;
+async function loadKeys(){
+  if(keysLoaded) return; keysLoaded=true;
+  const r = await api('GET', '/api/admin/api-keys');
+  const keys = r.ok ? await r.json() : [];
+  const tb = $('keysTbody');
+  if(!keys.length){ tb.innerHTML='<tr><td colspan="6" class="empty">No API keys yet.</td></tr>'; return; }
+  tb.innerHTML = keys.map(k => `
+    <tr>
+      <td>${escHtml(k.label)}</td>
+      <td class="mono">${escHtml(k.key_id)}</td>
+      <td>${k.ip_allowlist?.length ? k.ip_allowlist.map(escHtml).join(', ') : '<span style="color:var(--base)">any</span>'}</td>
+      <td>${fmt.date(k.last_used_at)}</td>
+      <td>${k.revoked_at
+        ? '<span class="pill pill-red">Revoked</span>'
+        : '<span class="pill pill-green">Active</span>'}</td>
+      <td>${k.revoked_at ? '' : `<button class="btn btn-danger btn-sm" onclick="revokeKey('${k.id}','${escHtml(k.label)}')">Revoke</button>`}</td>
+    </tr>`).join('');
+}
+
+async function revokeKey(id, label){
+  if(!confirm(`Revoke key "${label}"? The agent using it will stop working immediately.`)) return;
+  hideAlert('keysAlert');
+  const r = await api('DELETE', '/api/admin/api-keys/'+id);
+  if(r.ok){ keysLoaded=false; loadKeys(); showAlert('keysAlert','Key revoked.','success'); }
+  else { showAlert('keysAlert','Failed to revoke key.'); }
+}
+
+$('newKeyBtn').addEventListener('click', () => {
+  $('keyCreateForm').style.display='block';
+  $('keyReveal').style.display='none';
+  $('keyLabel').value='';
+  $('keyIp').value='';
+  hideAlert('keyCreateAlert');
+  openModal('newKeyModal');
+});
+
+$('createKeyBtn').addEventListener('click', async () => {
+  const label = $('keyLabel').value.trim();
+  if(!label){ showAlert('keyCreateAlert','Label is required.'); return; }
+  const rawIp = $('keyIp').value.trim();
+  const ip_allowlist = rawIp ? rawIp.split(',').map(s=>s.trim()).filter(Boolean) : null;
+  hideAlert('keyCreateAlert');
+  $('createKeyBtn').disabled = true;
+  const r = await api('POST', '/api/admin/api-keys', {label, ip_allowlist});
+  $('createKeyBtn').disabled = false;
+  if(!r.ok){
+    const d = await r.json().catch(()=>({}));
+    showAlert('keyCreateAlert', d.detail || 'Failed to create key.');
+    return;
+  }
+  const data = await r.json();
+  $('keyCreateForm').style.display='none';
+  $('keyRevealText').textContent = data.full_key;
+  $('keyReveal').style.display='block';
+  keysLoaded=false; loadKeys();
+});
+
+$('copyKeyBtn').addEventListener('click', () => {
+  navigator.clipboard.writeText($('keyRevealText').textContent).then(()=>{
+    $('copyKeyBtn').textContent='Copied!';
+    setTimeout(()=>{ $('copyKeyBtn').textContent='Copy to clipboard'; }, 2000);
+  });
+});
+
+/* ── Users ── */
+let usersLoaded = false;
+async function loadUsers(){
+  if(usersLoaded) return; usersLoaded=true;
+  const r = await api('GET', '/api/admin/users');
+  const users = r.ok ? await r.json() : [];
+  const tb = $('usersTbody');
+  if(!users.length){ tb.innerHTML='<tr><td colspan="5" class="empty">No users.</td></tr>'; return; }
+  tb.innerHTML = users.map(u => `
+    <tr>
+      <td>${escHtml(u.email)}</td>
+      <td><span class="pill ${u.role==='admin'?'pill-blue':'pill-grey'}">${u.role}</span></td>
+      <td>${u.totp_enabled ? '<span class="pill pill-green">On</span>' : '<span class="pill pill-grey">Off</span>'}</td>
+      <td>${fmt.date(u.last_login_at)}</td>
+      <td>${fmt.date(u.created_at)}</td>
+    </tr>`).join('');
+}
+
+$('inviteBtn').addEventListener('click', () => {
+  $('inviteEmail').value=''; $('invitePassword').value='';
+  $('inviteRole').value='member';
+  hideAlert('inviteAlert');
+  openModal('inviteModal');
+});
+
+$('inviteSubmitBtn').addEventListener('click', async () => {
+  const email = $('inviteEmail').value.trim();
+  const password = $('invitePassword').value;
+  const role = $('inviteRole').value;
+  if(!email || !password){ showAlert('inviteAlert','All fields are required.'); return; }
+  if(password.length < 10){ showAlert('inviteAlert','Password must be at least 10 characters.'); return; }
+  hideAlert('inviteAlert');
+  $('inviteSubmitBtn').disabled=true;
+  const r = await api('POST', '/api/admin/users', {email, password, role});
+  $('inviteSubmitBtn').disabled=false;
+  if(!r.ok){
+    const d = await r.json().catch(()=>({}));
+    showAlert('inviteAlert', d.detail==='user_exists' ? 'A user with that email already exists.' : (d.detail||'Failed to invite user.'));
+    return;
+  }
+  closeModal('inviteModal');
+  usersLoaded=false; loadUsers();
+  showAlert('usersAlert','User invited successfully.','success');
+});
+
+/* ── Snapshots ── */
+let snapsLoaded = false;
+async function loadSnapshots(){
+  if(snapsLoaded) return; snapsLoaded=true;
+  const r = await api('GET', '/api/admin/snapshots');
+  const snaps = r.ok ? await r.json() : [];
+  const tb = $('snapTbody');
+  if(!snaps.length){ tb.innerHTML='<tr><td colspan="7" class="empty">No snapshots yet.</td></tr>'; return; }
+  const pillMap = {open:'pill-yellow',committed:'pill-blue',parsed:'pill-green',error:'pill-red'};
+  tb.innerHTML = snaps.map(s => `
+    <tr>
+      <td class="mono" title="${s.id}">${s.id.slice(0,8)}…</td>
+      <td><span class="pill ${pillMap[s.status]||'pill-grey'}">${s.status}</span>
+          ${s.error ? `<span title="${escHtml(s.error)}" style="color:var(--error);cursor:help;margin-left:4px">⚠</span>` : ''}</td>
+      <td>${s.file_count}</td>
+      <td>${fmt.bytes(s.total_bytes)}</td>
+      <td>${fmt.date(s.started_at)}</td>
+      <td>${fmt.date(s.committed_at)}</td>
+      <td>${fmt.date(s.parsed_at)}</td>
+    </tr>`).join('');
+}
+
+/* ── Audit Log ── */
+let auditLoaded = false;
+async function loadAudit(){
+  if(auditLoaded) return; auditLoaded=true;
+  const r = await api('GET', '/api/admin/audit');
+  const rows = r.ok ? await r.json() : [];
+  const tb = $('auditTbody');
+  if(!rows.length){ tb.innerHTML='<tr><td colspan="5" class="empty">No audit events.</td></tr>'; return; }
+  tb.innerHTML = rows.map(a => `
+    <tr>
+      <td class="mono">${escHtml(a.action)}</td>
+      <td class="mono" style="color:var(--base-dark);font-size:11px">${a.resource ? fmt.truncate(a.resource,24) : '—'}</td>
+      <td style="font-size:12px;color:var(--base-dark)">${a.user_id ? '👤 '+a.user_id.slice(0,8)+'…' : a.api_key_id ? '🔑 key' : '—'}</td>
+      <td class="mono" style="font-size:12px">${escHtml(a.ip||'—')}</td>
+      <td style="font-size:12px">${fmt.date(a.at)}</td>
+    </tr>`).join('');
+}
+
+/* ── Settings / Logo ── */
+$('logoForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  hideAlert('logoAlert');
+  const file = $('logoFile').files[0];
+  if(!file){ showAlert('logoAlert','Please select a PNG file.'); return; }
+  const fd = new FormData(); fd.append('file', file);
+  $('logoBtn').disabled=true;
+  const r = await fetch('/api/admin/logo', {method:'POST', credentials:'include', body:fd});
+  $('logoBtn').disabled=false;
+  if(r.status===401){ window.location='/login'; return; }
+  if(r.ok){
+    showAlert('logoAlert','Logo uploaded.','success');
+    $('logoPreview').src = '/tenant-logo.png?t='+Date.now();
+  } else {
+    const d = await r.json().catch(()=>({}));
+    showAlert('logoAlert', d.detail==='not_png' ? 'Only PNG files are accepted.' : (d.detail||'Upload failed.'));
+  }
+});
+
+/* ── Modal helpers ── */
+function openModal(id){ $(id).classList.add('open'); }
+function closeModal(id){ $(id).classList.remove('open'); }
+document.querySelectorAll('[data-close]').forEach(btn => {
+  btn.addEventListener('click', () => closeModal(btn.dataset.close));
+});
+document.querySelectorAll('.modal-backdrop').forEach(bd => {
+  bd.addEventListener('click', e => { if(e.target===bd) closeModal(bd.id); });
+});
+
+/* ── XSS-safe escape ── */
+function escHtml(s){
+  if(s==null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ── Section loaders map ── */
+const loaders = {
+  keys: loadKeys,
+  users: loadUsers,
+  snapshots: loadSnapshots,
+  audit: loadAudit,
+  settings: () => {},
+};
+
+/* ── Init ── */
+loadMe();
+loadKeys();
+</script>
+</body>
+</html>

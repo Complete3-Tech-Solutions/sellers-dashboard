@@ -87,7 +87,7 @@ button[type="submit"]:disabled{opacity:.6;cursor:wait}
       <button type="submit" id="submitBtn">Sign in</button>
     </div>
   </form>
-  <div class="foot">Need an account? Ask your administrator.</div>
+  <div class="foot">New organization? <a href="/register">Create an account</a> · Otherwise, ask your administrator.</div>
 </main>
 <script>
 const form = document.getElementById('loginForm');
@@ -115,7 +115,8 @@ form.addEventListener('submit', async (e) => {
       body: JSON.stringify(body),
     });
     if (r.ok) {
-      window.location = '/';
+      const data = await r.json();
+      window.location = data.user?.role === 'admin' ? '/admin' : '/';
       return;
     }
     let detail = 'invalid_credentials';
