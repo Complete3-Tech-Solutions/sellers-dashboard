@@ -200,7 +200,10 @@ tr:hover td{background:var(--primary-lightest)}
       <div class="text"><strong>Profitability</strong>Admin Panel</div>
     </div>
     <nav id="sideNav">
-      <a href="#" class="nav-link active" data-section="keys">
+      <a href="#" class="nav-link active" data-section="agent">
+        <span class="nav-icon">🖥️</span> Agent
+      </a>
+      <a href="#" class="nav-link" data-section="keys">
         <span class="nav-icon">🔑</span> API Keys
       </a>
       <a href="#" class="nav-link" data-section="users">
@@ -222,11 +225,32 @@ tr:hover td{background:var(--primary-lightest)}
   <!-- Main -->
   <main class="main">
 
+    <!-- Agent connection -->
+    <div id="sec-agent" class="section active">
+      <div class="page-header">
+        <h1>Agent connection</h1>
+        <p>The desktop agent uses an API key to upload data. Rotate the key to change which agent is connected — the old key stops working immediately and the new key is downloaded for you to install on the agent.</p>
+      </div>
+      <div class="card" style="max-width:640px">
+        <div class="card-title">Current agent key</div>
+        <div id="agentAlert" class="alert"></div>
+        <div id="agentBody"><div class="loading">Loading…</div></div>
+      </div>
+      <div class="card" style="max-width:640px">
+        <div class="card-title">How to apply a key on the agent</div>
+        <p style="font-size:13px;color:var(--base-dark);margin-bottom:8px">
+          After you rotate, a <strong>.txt</strong> file downloads with the new key. On the agent's Windows machine, open an elevated PowerShell and run:
+        </p>
+        <div class="key-box">scc-agent.exe --store-key "&lt;the key from the file&gt;"</div>
+        <p style="font-size:12px;color:var(--base-dark)">The service picks up the new key on its next sync. The full key is shown only in that download — store it safely.</p>
+      </div>
+    </div>
+
     <!-- API Keys -->
-    <div id="sec-keys" class="section active">
+    <div id="sec-keys" class="section">
       <div class="page-header">
         <h1>API Keys</h1>
-        <p>Keys are used by the desktop agent to authenticate uploads. The secret is shown only once.</p>
+        <p>Advanced: manage all keys for this tenant. The secret is shown only once, when a key is created.</p>
       </div>
       <div class="card">
         <div class="card-title">Active keys
@@ -470,6 +494,90 @@ async function loadMe(){
     if(r.ok){ ME = await r.json(); $('topEmail').textContent = ME.email; }
   } catch(_){}
   return ME;
+}
+
+/* ── Agent connection ── */
+async function loadAgent(){
+  const body = $('agentBody');
+  let keys = [];
+  try { const r = await api('GET', '/api/admin/api-keys'); keys = r.ok ? await r.json() : []; }
+  catch(_){ body.innerHTML='<div class="empty">Could not load.</div>'; return; }
+  // The agent's key is the active (non-revoked) one, most recently used first.
+  const active = keys.filter(k => !k.revoked_at)
+    .sort((a,b)=> new Date(b.last_used_at||b.created_at) - new Date(a.last_used_at||a.created_at));
+  const cur = active[0];
+  if(!cur){
+    body.innerHTML = `
+      <p class="empty" style="margin-bottom:14px">No agent key is configured yet. Generate one, then install it on the agent machine.</p>
+      <button class="btn btn-primary" id="genKeyBtn">Generate agent key</button>`;
+    $('genKeyBtn').addEventListener('click', () => generateAgentKey());
+    return;
+  }
+  const connected = cur.last_used_at
+    ? `<span class="pill pill-green">Connected</span> <span style="font-size:12px;color:var(--base-dark)">last sync ${fmt.date(cur.last_used_at)}${cur.last_used_ip?' from '+escHtml(cur.last_used_ip):''}</span>`
+    : `<span class="pill pill-yellow">Never used</span> <span style="font-size:12px;color:var(--base-dark)">no sync from this key yet</span>`;
+  body.innerHTML = `
+    <table style="margin-bottom:16px">
+      <tr><th style="width:130px">Label</th><td>${escHtml(cur.label)}</td></tr>
+      <tr><th>Key ID</th><td class="mono">${escHtml(cur.key_id)}</td></tr>
+      <tr><th>IP allowlist</th><td>${cur.ip_allowlist?.length ? cur.ip_allowlist.map(escHtml).join(', ') : '<span style="color:var(--base)">any</span>'}</td></tr>
+      <tr><th>Status</th><td>${connected}</td></tr>
+    </table>
+    <button class="btn btn-primary" id="rotateKeyBtn">Rotate key &amp; download new</button>
+    <p class="hint" style="margin-top:8px">Rotating cuts off the agent until you install the new key on it.</p>`;
+  $('rotateKeyBtn').addEventListener('click', () => rotateAgentKey(cur.id, cur.label));
+}
+
+function downloadKeyFile(fullKey, label){
+  const origin = window.location.origin;
+  const lines = [
+    'SCC Profitability — Agent API Key',
+    '=================================',
+    '',
+    'Label:        ' + label,
+    'API base URL: ' + origin,
+    '',
+    'API KEY (keep secret — shown only in this file):',
+    '  ' + fullKey,
+    '',
+    'To connect the agent, run on its Windows machine in an elevated PowerShell:',
+    '  scc-agent.exe --store-key "' + fullKey + '"',
+    '',
+    'Or re-run the installer:',
+    '  .\\install.ps1 -ApiKey "' + fullKey + '" -WatchFolder "C:\\path\\to\\reports" -ApiBaseUrl "' + origin + '"',
+    '',
+    'The agent picks up the new key on its next sync. The previous key is now revoked.',
+  ];
+  const blob = new Blob([lines.join('\r\n')], {type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'scc-agent-key.txt';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+
+async function rotateAgentKey(id, label){
+  if(!confirm('Rotate the agent key?\n\nThe currently connected agent will STOP working until you install the new key on it. A .txt with the new key will download now.')) return;
+  hideAlert('agentAlert');
+  const r = await api('POST', '/api/admin/api-keys/'+id+'/rotate');
+  if(!r.ok){ const d=await r.json().catch(()=>({})); showAlert('agentAlert', d.detail||'Failed to rotate key.'); return; }
+  const data = await r.json();
+  downloadKeyFile(data.full_key, data.label);
+  keysLoaded = false;
+  await loadAgent();
+  showAlert('agentAlert','New key generated and downloaded (scc-agent-key.txt). Install it on the agent to reconnect.','success');
+}
+
+async function generateAgentKey(){
+  hideAlert('agentAlert');
+  const r = await api('POST', '/api/admin/api-keys', {label:'Desktop agent'});
+  if(!r.ok){ const d=await r.json().catch(()=>({})); showAlert('agentAlert', d.detail||'Failed to generate key.'); return; }
+  const data = await r.json();
+  downloadKeyFile(data.full_key, data.label);
+  keysLoaded = false;
+  await loadAgent();
+  showAlert('agentAlert','Agent key generated and downloaded (scc-agent-key.txt). Install it on the agent.','success');
 }
 
 /* ── API Keys ── */
@@ -718,6 +826,7 @@ function escHtml(s){
 
 /* ── Section loaders map ── */
 const loaders = {
+  agent: loadAgent,
   keys: loadKeys,
   users: loadUsers,
   snapshots: loadSnapshots,
@@ -727,7 +836,7 @@ const loaders = {
 
 /* ── Init ── */
 loadMe();
-loadKeys();
+loadAgent();
 </script>
 </body>
 </html>

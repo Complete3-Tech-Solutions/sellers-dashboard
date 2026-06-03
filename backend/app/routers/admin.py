@@ -79,6 +79,45 @@ async def list_api_keys(
     ]
 
 
+@router.post("/api-keys/{key_id}/rotate", response_model=ApiKeyCreateOut, status_code=201)
+async def rotate_api_key(
+    key_id: uuid.UUID,
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> ApiKeyCreateOut:
+    """Revoke an existing key and issue a fresh one carrying over its label and
+    IP allowlist. The agent must be reconfigured with the returned full_key."""
+    old = await session.get(ApiKey, key_id)
+    if not old or old.tenant_id != current.tenant_id:
+        raise HTTPException(404, "key_not_found")
+
+    if old.revoked_at is None:
+        old.revoked_at = datetime.now(tz=timezone.utc)
+
+    full_key, new_key_id, secret = new_api_key()
+    key = ApiKey(
+        tenant_id=current.tenant_id,
+        label=old.label,
+        key_id=new_key_id,
+        secret_hash=sha256_hex(secret),
+        secret_ciphertext=encrypt_secret(secret),
+        ip_allowlist=old.ip_allowlist,
+    )
+    session.add(key)
+    session.add(
+        AuditLog(
+            action="key.rotated",
+            tenant_id=current.tenant_id,
+            user_id=current.id,
+            resource=f"{old.key_id}->{new_key_id}",
+        )
+    )
+    await session.commit()
+    return ApiKeyCreateOut(
+        id=key.id, label=key.label, full_key=full_key, created_at=key.created_at
+    )
+
+
 @router.delete("/api-keys/{key_id}")
 async def revoke_api_key(
     key_id: uuid.UUID,

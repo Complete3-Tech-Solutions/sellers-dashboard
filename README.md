@@ -307,7 +307,7 @@ The mode is a query param (`?accounting=raw\|poc\|closeout`) on `/api/dashboard`
 - [x] Phase 0–3: scaffolding, auth, dashboard API, ingestion API
 - [x] Phase 4: Excel parser + RQ worker
 - [x] Phase 5–6: agent, installer, PyInstaller build
-- [x] Phase 7: Admin UI screens (API keys, users, snapshots, audit log, settings)
+- [x] Phase 7: Admin UI screens (agent connection + key rotation, API keys, users, snapshots, audit log, settings)
 - [ ] Phase 8: Hardening (TOTP UX, IP allowlist UX, RLS cross-tenant test, Sentry, WAF, backups)
 - [ ] Phase 9: Customer pilot
 
