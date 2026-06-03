@@ -110,6 +110,8 @@ async def register_tenant(
     response: Response,
     session: AsyncSession = Depends(get_session),
 ) -> RegisterTenantOut:
+    if not settings.allow_registration:
+        raise HTTPException(status_code=404, detail="registration_disabled")
     ip = get_client_ip(request)
     await rate_limit.enforce(
         f"rl:register:{ip}",

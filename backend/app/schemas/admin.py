@@ -63,3 +63,8 @@ class UserAdminOut(BaseModel):
     totp_enabled: bool
     last_login_at: datetime | None = None
     created_at: datetime
+
+
+class UserUpdateIn(BaseModel):
+    role: str | None = Field(default=None, pattern="^(admin|member)$")
+    password: str | None = Field(default=None, min_length=10, max_length=256)

@@ -259,9 +259,9 @@ tr:hover td{background:var(--primary-lightest)}
         <div class="tbl-wrap">
           <table id="usersTable">
             <thead><tr>
-              <th>Email</th><th>Role</th><th>2FA</th><th>Last login</th><th>Joined</th>
+              <th>Email</th><th>Role</th><th>2FA</th><th>Last login</th><th>Joined</th><th>Actions</th>
             </tr></thead>
-            <tbody id="usersTbody"><tr><td colspan="5" class="loading">Loading…</td></tr></tbody>
+            <tbody id="usersTbody"><tr><td colspan="6" class="loading">Loading…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -396,6 +396,27 @@ tr:hover td{background:var(--primary-lightest)}
   </div>
 </div>
 
+<!-- Reset Password modal -->
+<div class="modal-backdrop" id="resetModal">
+  <div class="modal">
+    <button class="modal-close" data-close="resetModal">×</button>
+    <h2>Reset password</h2>
+    <div id="resetAlert" class="alert"></div>
+    <p style="font-size:13px;color:var(--base-dark);margin-bottom:12px">
+      Set a new password for <strong id="resetEmail"></strong>. They'll be signed out and must log in with it.
+    </p>
+    <div class="field" style="margin-bottom:4px">
+      <label for="resetPassword">New password</label>
+      <input type="password" id="resetPassword" minlength="10" autocomplete="new-password" required>
+      <span class="hint">Minimum 10 characters.</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" data-close="resetModal">Cancel</button>
+      <button class="btn btn-primary" id="resetSubmitBtn">Reset password</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ── Utilities ── */
 const $ = id => document.getElementById(id);
@@ -442,11 +463,13 @@ $('logoutBtn').addEventListener('click', async e => {
 });
 
 /* ── Load current user ── */
+let ME = null;
 async function loadMe(){
   try{
     const r = await api('GET', '/auth/me');
-    if(r.ok){ const d=await r.json(); $('topEmail').textContent=d.email; }
+    if(r.ok){ ME = await r.json(); $('topEmail').textContent = ME.email; }
   } catch(_){}
+  return ME;
 }
 
 /* ── API Keys ── */
@@ -519,19 +542,76 @@ $('copyKeyBtn').addEventListener('click', () => {
 let usersLoaded = false;
 async function loadUsers(){
   if(usersLoaded) return; usersLoaded=true;
+  if(!ME) await loadMe();
   const r = await api('GET', '/api/admin/users');
   const users = r.ok ? await r.json() : [];
   const tb = $('usersTbody');
-  if(!users.length){ tb.innerHTML='<tr><td colspan="5" class="empty">No users.</td></tr>'; return; }
-  tb.innerHTML = users.map(u => `
+  if(!users.length){ tb.innerHTML='<tr><td colspan="6" class="empty">No users.</td></tr>'; return; }
+  tb.innerHTML = users.map(u => {
+    const isSelf = ME && u.id === ME.id;
+    const roleBtn = u.role==='admin'
+      ? `<button class="btn btn-ghost btn-sm" onclick="setRole('${u.id}','${escHtml(u.email)}','member')">Make member</button>`
+      : `<button class="btn btn-ghost btn-sm" onclick="setRole('${u.id}','${escHtml(u.email)}','admin')">Make admin</button>`;
+    const actions = isSelf
+      ? '<span style="color:var(--base);font-size:12px">You</span>'
+      : `<div style="display:flex;gap:6px;flex-wrap:wrap">
+           <button class="btn btn-ghost btn-sm" onclick="resetUserPassword('${u.id}','${escHtml(u.email)}')">Reset password</button>
+           ${roleBtn}
+           <button class="btn btn-danger btn-sm" onclick="removeUser('${u.id}','${escHtml(u.email)}')">Remove</button>
+         </div>`;
+    return `
     <tr>
       <td>${escHtml(u.email)}</td>
       <td><span class="pill ${u.role==='admin'?'pill-blue':'pill-grey'}">${u.role}</span></td>
       <td>${u.totp_enabled ? '<span class="pill pill-green">On</span>' : '<span class="pill pill-grey">Off</span>'}</td>
       <td>${fmt.date(u.last_login_at)}</td>
       <td>${fmt.date(u.created_at)}</td>
-    </tr>`).join('');
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
 }
+
+const USER_ERR = {
+  last_admin: 'This is the only admin — promote another user first.',
+  cannot_delete_self: "You can't remove your own account.",
+  user_not_found: 'User not found.',
+};
+function userErr(detail, fallback){ return USER_ERR[detail] || fallback; }
+
+async function setRole(id, email, role){
+  const verb = role==='admin' ? 'Promote to admin' : 'Demote to member';
+  if(!confirm(`${verb}: ${email}?\nThey'll be signed out and must log in again.`)) return;
+  hideAlert('usersAlert');
+  const r = await api('PATCH', '/api/admin/users/'+id, {role});
+  if(r.ok){ usersLoaded=false; loadUsers(); showAlert('usersAlert',`${email} is now ${role}.`,'success'); }
+  else { const d=await r.json().catch(()=>({})); showAlert('usersAlert', userErr(d.detail,'Failed to change role.')); }
+}
+
+async function removeUser(id, email){
+  if(!confirm(`Remove ${email}? This permanently deletes the account and signs them out.`)) return;
+  hideAlert('usersAlert');
+  const r = await api('DELETE', '/api/admin/users/'+id);
+  if(r.ok){ usersLoaded=false; loadUsers(); showAlert('usersAlert',`${email} removed.`,'success'); }
+  else { const d=await r.json().catch(()=>({})); showAlert('usersAlert', userErr(d.detail,'Failed to remove user.')); }
+}
+
+let resetTargetId = null;
+function resetUserPassword(id, email){
+  resetTargetId = id;
+  $('resetEmail').textContent = email;
+  $('resetPassword').value = '';
+  hideAlert('resetAlert');
+  openModal('resetModal');
+}
+$('resetSubmitBtn').addEventListener('click', async () => {
+  const password = $('resetPassword').value;
+  if(password.length < 10){ showAlert('resetAlert','Password must be at least 10 characters.'); return; }
+  $('resetSubmitBtn').disabled = true;
+  const r = await api('PATCH', '/api/admin/users/'+resetTargetId, {password});
+  $('resetSubmitBtn').disabled = false;
+  if(r.ok){ closeModal('resetModal'); showAlert('usersAlert','Password reset. The user must log in again.','success'); }
+  else { const d=await r.json().catch(()=>({})); showAlert('resetAlert', userErr(d.detail,'Failed to reset password.')); }
+});
 
 $('inviteBtn').addEventListener('click', () => {
   $('inviteEmail').value=''; $('invitePassword').value='';

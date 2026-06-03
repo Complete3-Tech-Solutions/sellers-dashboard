@@ -66,6 +66,11 @@ class Settings(BaseSettings):
 
     dashboard_cache_ttl_seconds: int = 60
 
+    # Self-service tenant signup. This is a single-tenant deployment by default,
+    # so the /register page and /auth/register-tenant endpoint are disabled.
+    # Set ALLOW_REGISTRATION=true to re-enable multi-tenant onboarding.
+    allow_registration: bool = False
+
     # When true, /api/snapshot/{id}/commit runs the parser inline instead of
     # enqueuing an RQ job. Useful for single-service deployments (e.g. Railway
     # without a separate worker plan). Defaults to true in dev.

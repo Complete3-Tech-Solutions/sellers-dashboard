@@ -36,8 +36,6 @@ async def root(access_token: str | None = Cookie(default=None)):
 async def login_page(access_token: str | None = Cookie(default=None)):
     claims = _decode_token(access_token)
     if claims:
-        if claims.get("role") == "admin":
-            return RedirectResponse(url="/admin", status_code=302)
         return RedirectResponse(url="/", status_code=302)
     return FileResponse(DASHBOARD_DIR / "login.html")
 
@@ -54,10 +52,10 @@ async def admin_page(access_token: str | None = Cookie(default=None)):
 
 @router.get("/register", include_in_schema=False)
 async def register_page(access_token: str | None = Cookie(default=None)):
+    if not settings.allow_registration:
+        return RedirectResponse(url="/login", status_code=302)
     claims = _decode_token(access_token)
     if claims:
-        if claims.get("role") == "admin":
-            return RedirectResponse(url="/admin", status_code=302)
         return RedirectResponse(url="/", status_code=302)
     return FileResponse(DASHBOARD_DIR / "register.html")
 

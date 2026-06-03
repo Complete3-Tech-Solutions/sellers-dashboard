@@ -57,12 +57,17 @@ On the backend service → **Variables** tab, add:
 
 | Variable | Value | Purpose |
 | -------- | ----- | ------- |
-| `SEED_TENANT` | `SCC` | Tenant display name (slug is derived from it). |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | your admin login | Seeded with role `admin` → lands on `/admin`. |
-| `USER_EMAIL` / `USER_PASSWORD` | your member login | Seeded with role `member` → lands on `/`. |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | your admin login | Seeded with role `admin` (always). |
+| `USER_EMAIL` / `USER_PASSWORD` | your member login (optional) | Seeds a `member` user **only if both are set**. Otherwise just the admin is seeded and you add the rest from **Admin → Users**. |
+| `SEED_TENANT_SLUG` | `dev` (default) | Tenant the users join. Defaults to `dev` — the same tenant `app.seed` and agent uploads use — so the seeded users **see existing data** instead of an empty tenant. |
 | `SEED_RESET_PASSWORD` | `true` (optional) | Reset the seeded passwords to the current env values on the next boot. |
+| `SEED_REMOVE_EMAIL` | `dev@example.com` (optional) | Delete a legacy user (e.g. the demo admin) from the tenant. Comma-separated for several. Never deletes the users it just seeded. |
 
-Outside dev (`ENV=prod`), `ADMIN_PASSWORD` and `USER_PASSWORD` are **required** — the seeder refuses to fall back to a weak default. Generate strong values with `python -c "import secrets,string; a=string.ascii_letters+string.digits+'!@#%^&*-_'; print(''.join(secrets.choice(a) for _ in range(24)))"`. The seed is idempotent: re-runs are a no-op unless `SEED_RESET_PASSWORD=true`. Once logged in, the admin can add more people from **Admin → Users → Invite user**.
+Both roles land on the **dashboard** (`/`) after login; admins additionally get a `⚙️ Admin` link in the dashboard header to reach the admin panel. Outside dev (`ENV=prod`), `ADMIN_PASSWORD` and `USER_PASSWORD` are **required** — the seeder refuses to fall back to a weak default. Generate strong values with `python -c "import secrets,string; a=string.ascii_letters+string.digits+'!@#%^&*-_'; print(''.join(secrets.choice(a) for _ in range(24)))"`. The seed is idempotent: re-runs are a no-op unless `SEED_RESET_PASSWORD=true`. Once logged in, the admin can add more people from **Admin → Users → Invite user**.
+
+> **Don't run `AUTO_SEED` and `AUTO_SEED_ADMIN` together long-term.** `AUTO_SEED` recreates the demo `dev@example.com` admin on every boot. For a clean setup, use `AUTO_SEED_ADMIN` only and set `SEED_REMOVE_EMAIL=dev@example.com` once to delete the demo admin.
+
+> **Single tenant by default.** Self-service signup (the `/register` page and `/auth/register-tenant` endpoint) is **disabled** — there's one tenant, seeded above, and the admin adds everyone else via **Admin → Users**. Set `ALLOW_REGISTRATION=true` only if you want to re-enable multi-tenant onboarding.
 
 ### 4. Generate a public domain
 

@@ -4,12 +4,12 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.deps import CurrentUser, require_admin
-from app.models import ApiKey, AuditLog, Snapshot, Tenant, User
+from app.models import ApiKey, AuditLog, RefreshToken, Snapshot, Tenant, User
 from app.schemas.admin import (
     ApiKeyCreateIn,
     ApiKeyCreateOut,
@@ -18,6 +18,7 @@ from app.schemas.admin import (
     SnapshotSummaryOut,
     UserAdminOut,
     UserInviteIn,
+    UserUpdateIn,
 )
 from app.security import encrypt_secret, hash_password, new_api_key, sha256_hex
 from app.services import storage
@@ -236,3 +237,96 @@ async def invite_user(
     )
     await session.commit()
     return {"id": str(user.id)}
+
+
+async def _admin_count(session: AsyncSession, tenant_id: uuid.UUID) -> int:
+    res = await session.execute(
+        select(func.count())
+        .select_from(User)
+        .where(User.tenant_id == tenant_id, User.role == "admin")
+    )
+    return int(res.scalar_one())
+
+
+async def _revoke_sessions(session: AsyncSession, user_id: uuid.UUID) -> None:
+    """Force a user to re-authenticate by revoking their refresh tokens."""
+    await session.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=datetime.now(tz=timezone.utc))
+    )
+
+
+@router.patch("/users/{user_id}")
+async def update_user(
+    user_id: uuid.UUID,
+    body: UserUpdateIn,
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    if body.role is None and body.password is None:
+        raise HTTPException(400, "no_changes")
+
+    user = await session.get(User, user_id)
+    if not user or user.tenant_id != current.tenant_id:
+        raise HTTPException(404, "user_not_found")
+
+    # Don't let the last admin demote themselves and lock the tenant out.
+    if (
+        body.role == "member"
+        and user.role == "admin"
+        and await _admin_count(session, current.tenant_id) <= 1
+    ):
+        raise HTTPException(409, "last_admin")
+
+    actions: list[str] = []
+    if body.role is not None and body.role != user.role:
+        user.role = body.role
+        actions.append(f"role.{body.role}")
+        await _revoke_sessions(session, user.id)
+    if body.password is not None:
+        user.password_hash = hash_password(body.password)
+        actions.append("password.reset")
+        await _revoke_sessions(session, user.id)
+
+    if actions:
+        session.add(
+            AuditLog(
+                action="user.updated",
+                tenant_id=current.tenant_id,
+                user_id=current.id,
+                resource=f"{user.email}:{'+'.join(actions)}",
+            )
+        )
+    await session.commit()
+    return {"ok": True, "changed": actions}
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: uuid.UUID,
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    if user_id == current.id:
+        raise HTTPException(400, "cannot_delete_self")
+
+    user = await session.get(User, user_id)
+    if not user or user.tenant_id != current.tenant_id:
+        raise HTTPException(404, "user_not_found")
+
+    if user.role == "admin" and await _admin_count(session, current.tenant_id) <= 1:
+        raise HTTPException(409, "last_admin")
+
+    email = user.email
+    await session.delete(user)  # refresh_tokens cascade via FK
+    session.add(
+        AuditLog(
+            action="user.deleted",
+            tenant_id=current.tenant_id,
+            user_id=current.id,
+            resource=email,
+        )
+    )
+    await session.commit()
+    return {"ok": True}
