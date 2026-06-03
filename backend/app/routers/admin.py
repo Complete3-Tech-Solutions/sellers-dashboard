@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import desc, func, select, update
@@ -92,7 +92,7 @@ async def rotate_api_key(
         raise HTTPException(404, "key_not_found")
 
     if old.revoked_at is None:
-        old.revoked_at = datetime.now(tz=timezone.utc)
+        old.revoked_at = datetime.now(tz=UTC)
 
     full_key, new_key_id, secret = new_api_key()
     key = ApiKey(
@@ -128,7 +128,7 @@ async def revoke_api_key(
     if not key or key.tenant_id != current.tenant_id:
         raise HTTPException(404, "key_not_found")
     if key.revoked_at is None:
-        key.revoked_at = datetime.now(tz=timezone.utc)
+        key.revoked_at = datetime.now(tz=UTC)
         session.add(
             AuditLog(
                 action="key.revoked",
@@ -292,7 +292,7 @@ async def _revoke_sessions(session: AsyncSession, user_id: uuid.UUID) -> None:
     await session.execute(
         update(RefreshToken)
         .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
-        .values(revoked_at=datetime.now(tz=timezone.utc))
+        .values(revoked_at=datetime.now(tz=UTC))
     )
 
 

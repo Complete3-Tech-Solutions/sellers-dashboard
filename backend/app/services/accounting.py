@@ -22,11 +22,11 @@ the monthly / quarterly / totals rollups.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Iterable
 
-from app.services.parser import MONTHS, MONTH_TO_Q
+from app.services.parser import MONTH_TO_Q, MONTHS
 
 ACCOUNTING_MODES = ("raw", "poc", "closeout")
 DEFAULT_MODE = "raw"

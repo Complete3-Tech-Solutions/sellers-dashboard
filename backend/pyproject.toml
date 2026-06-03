@@ -49,7 +49,9 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
-ignore = ["E501"]
+# E501: line length handled by formatter; B008: FastAPI's Depends()/Query()/
+# File()/Cookie() default-argument injection is intentional, not a bug.
+ignore = ["E501", "B008"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

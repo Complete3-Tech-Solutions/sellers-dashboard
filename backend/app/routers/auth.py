@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pyotp
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -91,7 +91,7 @@ async def _issue_session(
 ) -> None:
     access = issue_access_token(user_id=user.id, tenant_id=user.tenant_id, role=user.role)
     refresh, refresh_hash = new_refresh_token()
-    expires = datetime.now(tz=timezone.utc) + timedelta(seconds=settings.jwt_refresh_ttl_seconds)
+    expires = datetime.now(tz=UTC) + timedelta(seconds=settings.jwt_refresh_ttl_seconds)
     session.add(
         RefreshToken(
             user_id=user.id,
@@ -197,7 +197,7 @@ async def login(
     if needs_rehash(user.password_hash):
         user.password_hash = hash_password(body.password)
 
-    user.last_login_at = datetime.now(tz=timezone.utc)
+    user.last_login_at = datetime.now(tz=UTC)
     await _issue_session(session, user, response)
     await _audit(
         session,
@@ -229,8 +229,8 @@ async def refresh(
     if not row:
         raise HTTPException(status_code=401, detail="invalid_refresh")
 
-    now = datetime.now(tz=timezone.utc)
-    if row.expires_at.replace(tzinfo=timezone.utc) < now or row.revoked_at is not None:
+    now = datetime.now(tz=UTC)
+    if row.expires_at.replace(tzinfo=UTC) < now or row.revoked_at is not None:
         # Theft detection: if revoked but re-used, revoke the whole family
         await session.execute(
             RefreshToken.__table__.update()
@@ -263,7 +263,7 @@ async def logout(
         await session.execute(
             RefreshToken.__table__.update()
             .where(RefreshToken.token_hash == token_hash)
-            .values(revoked_at=datetime.now(tz=timezone.utc))
+            .values(revoked_at=datetime.now(tz=UTC))
         )
         await session.commit()
     _clear_auth_cookies(response)
