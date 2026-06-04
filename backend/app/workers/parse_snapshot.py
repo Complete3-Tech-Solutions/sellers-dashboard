@@ -5,7 +5,7 @@ import logging
 import pathlib
 import tempfile
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import Session
@@ -137,7 +137,7 @@ def parse_snapshot_job(snapshot_id_str: str) -> dict:
                     applied_years.append(year)
 
                 snap.status = "parsed"
-                snap.parsed_at = datetime.now(tz=timezone.utc)
+                snap.parsed_at = datetime.now(tz=UTC)
                 snap.error = None
                 session.commit()
 

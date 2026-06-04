@@ -121,7 +121,7 @@ form.addEventListener('submit', async e => {
     });
     if(r.ok){
       showOk('Account created! Redirecting…');
-      setTimeout(()=>{ window.location='/admin'; }, 800);
+      setTimeout(()=>{ window.location='/'; }, 800);
       return;
     }
     let detail = '';

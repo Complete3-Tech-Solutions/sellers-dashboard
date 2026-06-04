@@ -266,6 +266,8 @@ body.has-fullscreen{overflow:hidden}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Export PDF
       </button>
+      <a id="adminLink" href="/admin" class="export-btn" title="Admin panel" style="display:none;text-decoration:none">⚙️ Admin</a>
+      <a id="logoutLink" href="#" class="export-btn" title="Sign out" style="text-decoration:none">Sign out</a>
     </div>
   </div>
 </header>
@@ -325,9 +327,11 @@ body.has-fullscreen{overflow:hidden}
       <div class="card"><div class="card-head"><div class="card-title">Revenue Concentration</div><div class="card-tag">Pareto</div></div><div class="card-sub">% of revenue by ranked job #</div><div class="chart-wrap"><canvas id="paretoChart"></canvas></div></div>
     </div>
     <div style="height:14px"></div>
-    <div class="grid grid-2">
+    <div class="grid grid-1">
       <div class="card"><div class="card-head"><div class="card-title">Contract vs Margin — by Job #</div><div class="card-tag">Scatter</div></div><div class="card-sub">Each dot is a Job #. X = contract value (log), Y = profit margin %</div><div class="chart-wrap xtall"><canvas id="scatterChart"></canvas></div></div>
+      <!-- BILLING HIDDEN: Cash Position relies on INVOICED/PMT RECD columns, which hold stale template values in the source spreadsheets (see data_issue.md). Restore by re-adding this card, switching the grid back to grid-2, and re-enabling renderCashChart(d).
       <div class="card"><div class="card-head"><div class="card-title">Cash Position</div><div class="card-tag">A/R</div></div><div class="card-sub">Cash received, outstanding A/R, and unbilled backlog</div><div class="chart-wrap xtall"><canvas id="cashChart"></canvas></div></div>
+      -->
     </div>
   </section>
   <section class="section">
@@ -351,9 +355,11 @@ body.has-fullscreen{overflow:hidden}
             <th data-sort="cost" class="sortable num">Cost</th>
             <th data-sort="profit" class="sortable num">Profit</th>
             <th data-sort="profit_pct" class="sortable num">Margin</th>
+            <!-- BILLING HIDDEN: Invoiced/Pmt Recd/A-R come from stale spreadsheet columns (see data_issue.md)
             <th data-sort="invoiced" class="sortable num">Invoiced</th>
             <th data-sort="pmt_recd" class="sortable num">Pmt Recd</th>
             <th data-sort="outstanding" class="sortable num">A/R</th>
+            -->
           </tr></thead>
           <tbody id="projTableBody"></tbody>
         </table>
@@ -473,8 +479,22 @@ async function loadYear(year){
   renderYear(year);
 }
 
+async function loadSession(){
+  try {
+    const me = await api('/auth/me');
+    if (me?.role === 'admin') document.getElementById('adminLink').style.display = '';
+  } catch (_) { /* 401 already redirects to /login */ }
+}
+
+document.getElementById('logoutLink').addEventListener('click', async (e) => {
+  e.preventDefault();
+  try { await fetch('/auth/logout', {method:'POST', credentials:'include'}); } catch (_) {}
+  window.location = '/login';
+});
+
 async function bootstrap(){
   try {
+    loadSession();
     const def = await fetchYears();
     if (def != null) await loadYear(def);
   } catch (e) {
@@ -548,7 +568,7 @@ function renderYear(year){
   renderMTrendChart(dv); renderMCumChart(dv); renderOhStackChart(dv); renderMNetChart(dv);
   renderTopContractChart(d); renderTopProfitChart(d);
   renderSizePieChart(d); renderCompletePieChart(d); renderMarginBandChart(d); renderParetoChart(d);
-  renderScatterChart(d); renderCashChart(d);
+  renderScatterChart(d); /* renderCashChart(d) — BILLING HIDDEN: see data_issue.md */
   renderTable(d);
 }
 
@@ -903,9 +923,6 @@ function renderTable(d){
       <td class="num">${fmt$full(p.cost)}</td>
       <td class="num ${profitCls}">${fmt$full(p.profit)}</td>
       <td class="num ${marginCls}">${fmtPct(p.profit_pct)}</td>
-      <td class="num">${fmt$full(p.invoiced)}</td>
-      <td class="num">${fmt$full(p.pmt_recd)}</td>
-      <td class="num ${arCls}">${fmt$full(p.outstanding)}</td>
     </tr>`;
   }).join('');
 }
@@ -1183,7 +1200,8 @@ async function exportPDF(){
 
       pdf.autoTable({
         startY: headerH + 18,
-        head: [['Job #','Project Name','% Compl','Contract','Cost','Profit','Margin','Invoiced','Pmt Recd','A/R']],
+        // BILLING HIDDEN: Invoiced/Pmt Recd/A-R omitted — stale source columns (see data_issue.md)
+        head: [['Job #','Project Name','% Compl','Contract','Cost','Profit','Margin']],
         body: projects.map(p => [
           String(p.job ?? ''),
           p.name || '',
@@ -1191,10 +1209,7 @@ async function exportPDF(){
           fmt$full(num(p.contract)),
           fmt$full(num(p.cost)),
           fmt$full(num(p.profit)),
-          fmtPct(p.profit_pct),
-          typeof p.invoiced === 'number' ? fmt$full(p.invoiced) : (p.invoiced || '—'),
-          typeof p.pmt_recd === 'number' ? fmt$full(p.pmt_recd) : (p.pmt_recd || '—'),
-          fmt$full(num(p.invoiced) - num(p.pmt_recd))
+          fmtPct(p.profit_pct)
         ]),
         styles: {fontSize:7.5, cellPadding:1.6, lineColor:[223,225,226], lineWidth:0.1, overflow:'linebreak', valign:'middle'},
         headStyles: {fillColor:[22,46,81], textColor:255, fontStyle:'bold', fontSize:8, halign:'left'},
@@ -1206,10 +1221,7 @@ async function exportPDF(){
           3: {halign:'right', cellWidth:25},
           4: {halign:'right', cellWidth:25},
           5: {halign:'right', cellWidth:25},
-          6: {halign:'right', cellWidth:20},
-          7: {halign:'right', cellWidth:30},
-          8: {halign:'right', cellWidth:30},
-          9: {halign:'right', cellWidth:25}
+          6: {halign:'right', cellWidth:20}
         },
         margin: {left:margin, right:margin, top:headerH+6, bottom:footerH+4},
         didParseCell: (data) => {
@@ -1221,10 +1233,6 @@ async function exportPDF(){
           }
           if (data.column.index === 6 && txt.indexOf('-') === 0){
             data.cell.styles.textColor = [181,9,9]; data.cell.styles.fontStyle = 'bold';
-          }
-          if (data.column.index === 9){
-            const v = parseFloat(txt.replace(/[$,]/g,''));
-            if (!isNaN(v) && v > 1000){ data.cell.styles.textColor = [192,86,0]; data.cell.styles.fontStyle = 'bold'; }
           }
         },
         didDrawPage: (data) => { if (data.pageNumber > 1) drawLandscapeHeader(); }

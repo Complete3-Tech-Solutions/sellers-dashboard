@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -99,7 +99,7 @@ async def verify_agent(
     if not hmac_verify(expected_secret, msg, signature):
         raise HTTPException(401, "bad_signature")
 
-    api_key.last_used_at = datetime.now(tz=timezone.utc)
+    api_key.last_used_at = datetime.now(tz=UTC)
     api_key.last_used_ip = ip
 
     await rate_limit.enforce(
@@ -249,7 +249,7 @@ async def commit_snapshot(
             raise HTTPException(400, f"sha256_mismatch_for_{m.filename}")
 
     snap.status = "committed"
-    snap.committed_at = datetime.now(tz=timezone.utc)
+    snap.committed_at = datetime.now(tz=UTC)
 
     job_id = str(uuid.uuid4())
     session.add(

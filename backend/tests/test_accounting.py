@@ -31,7 +31,7 @@ def test_poc_mode_scales_by_completion():
     monthly, quarterly, totals = aggregate(projects, mode="poc")
     # A contributes 1000 * 0.25 = 250; B contributes 500 * 1.0 = 500
     assert totals["sales"] == 750
-    assert totals["gross_profit"] == 125   # 100*0.25 + 50*1
+    assert totals["gross_profit"] == 75   # 100*0.25 + 50*1
     assert quarterly[0]["sales"] == 250
     assert quarterly[1]["sales"] == 500
 

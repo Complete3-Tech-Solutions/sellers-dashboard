@@ -13,7 +13,7 @@ from app.deps import CurrentUser, get_current_user
 from app.models import MonthlyMetric, OverheadDetail, Project, QuarterlyMetric
 from app.redis_client import get_redis
 from app.schemas.dashboard import DashboardOut, ProjectLifetimeOut, ProjectYearRow, YearsOut
-from app.services.accounting import ACCOUNTING_MODES, DEFAULT_MODE, aggregate
+from app.services.accounting import DEFAULT_MODE, aggregate
 from app.settings import settings
 
 router = APIRouter(prefix="/api", tags=["dashboard"])

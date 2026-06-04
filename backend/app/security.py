@@ -6,7 +6,7 @@ import hmac
 import secrets
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from argon2 import PasswordHasher
@@ -65,7 +65,7 @@ def _ensure_keys() -> tuple[str, str]:
 
 def issue_access_token(*, user_id: uuid.UUID, tenant_id: uuid.UUID, role: str) -> str:
     priv, _ = _ensure_keys()
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     claims = {
         "sub": str(user_id),
         "tid": str(tenant_id),
