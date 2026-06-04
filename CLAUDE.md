@@ -74,6 +74,10 @@ There is no Python on PATH as `python` here — use `python3`.
   Railway service works; set false + run an `rq worker` for a separate worker.
 - **Dashboard data is per-tenant and per-year.** `seed.py` deletes+reinserts per year (idempotent).
   Real data comes from agent uploads; demo data (2013) is separate years in the same tenant.
+- **Billing columns are unreliable.** `INVOICED`/`PMT RECD`/`OPEN PO` in the source spreadsheets
+  hold stale template values (identical across 2012–2025), so the Cash Position chart + A/R table
+  columns are **hidden** in the dashboard. See [data_issue.md](data_issue.md). Don't "fix" the
+  parser for these — the mapping is correct; the source data isn't.
 
 ## Operational model (IMPORTANT — current deployment)
 
