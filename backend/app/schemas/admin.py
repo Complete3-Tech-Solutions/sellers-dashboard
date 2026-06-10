@@ -11,6 +11,11 @@ class ApiKeyCreateIn(BaseModel):
     ip_allowlist: list[str] | None = None
 
 
+class ApiKeyRotateIn(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=128)
+    ip_allowlist: list[str] | None = None
+
+
 class ApiKeyCreateOut(BaseModel):
     id: uuid.UUID
     label: str

@@ -14,6 +14,7 @@ from app.schemas.admin import (
     ApiKeyCreateIn,
     ApiKeyCreateOut,
     ApiKeyOut,
+    ApiKeyRotateIn,
     AuditLogOut,
     SnapshotSummaryOut,
     UserAdminOut,
@@ -82,11 +83,13 @@ async def list_api_keys(
 @router.post("/api-keys/{key_id}/rotate", response_model=ApiKeyCreateOut, status_code=201)
 async def rotate_api_key(
     key_id: uuid.UUID,
+    body: ApiKeyRotateIn | None = None,
     current: CurrentUser = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
 ) -> ApiKeyCreateOut:
-    """Revoke an existing key and issue a fresh one carrying over its label and
-    IP allowlist. The agent must be reconfigured with the returned full_key."""
+    """Revoke an existing key and issue a fresh one. Label and IP allowlist are
+    carried over from the old key unless overridden in the request body. The
+    agent must be reconfigured with the returned full_key."""
     old = await session.get(ApiKey, key_id)
     if not old or old.tenant_id != current.tenant_id:
         raise HTTPException(404, "key_not_found")
@@ -94,14 +97,17 @@ async def rotate_api_key(
     if old.revoked_at is None:
         old.revoked_at = datetime.now(tz=UTC)
 
+    label = body.label if body and body.label else old.label
+    ip_allowlist = body.ip_allowlist if body is not None else old.ip_allowlist
+
     full_key, new_key_id, secret = new_api_key()
     key = ApiKey(
         tenant_id=current.tenant_id,
-        label=old.label,
+        label=label,
         key_id=new_key_id,
         secret_hash=sha256_hex(secret),
         secret_ciphertext=encrypt_secret(secret),
-        ip_allowlist=old.ip_allowlist,
+        ip_allowlist=ip_allowlist,
     )
     session.add(key)
     session.add(
@@ -139,6 +145,95 @@ async def revoke_api_key(
         )
         await session.commit()
     return {"ok": True}
+
+
+@router.post("/api-keys/{key_id}/activate", response_model=ApiKeyOut)
+async def activate_api_key(
+    key_id: uuid.UUID,
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> ApiKeyOut:
+    """Make this key the sole active one: un-revoke it if needed and revoke every
+    other key in the tenant. No new secret is issued, so the agent must already
+    hold this key for the switch to take effect."""
+    key = await session.get(ApiKey, key_id)
+    if not key or key.tenant_id != current.tenant_id:
+        raise HTTPException(404, "key_not_found")
+
+    now = datetime.now(tz=UTC)
+    others = await session.execute(
+        select(ApiKey).where(
+            ApiKey.tenant_id == current.tenant_id,
+            ApiKey.id != key_id,
+            ApiKey.revoked_at.is_(None),
+        )
+    )
+    for other in others.scalars().all():
+        other.revoked_at = now
+        session.add(
+            AuditLog(
+                action="key.revoked",
+                tenant_id=current.tenant_id,
+                user_id=current.id,
+                resource=other.key_id,
+            )
+        )
+
+    if key.revoked_at is not None:
+        key.revoked_at = None
+    session.add(
+        AuditLog(
+            action="key.activated",
+            tenant_id=current.tenant_id,
+            user_id=current.id,
+            resource=key.key_id,
+        )
+    )
+    await session.commit()
+    return ApiKeyOut(
+        id=key.id,
+        label=key.label,
+        key_id=key.key_id,
+        ip_allowlist=key.ip_allowlist,
+        last_used_at=key.last_used_at,
+        last_used_ip=str(key.last_used_ip) if key.last_used_ip else None,
+        created_at=key.created_at,
+        revoked_at=key.revoked_at,
+    )
+
+
+@router.post("/api-keys/{key_id}/reinstate", response_model=ApiKeyOut)
+async def reinstate_api_key(
+    key_id: uuid.UUID,
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> ApiKeyOut:
+    """Un-revoke a previously revoked key. The same secret is preserved, so an
+    agent that still holds this key reconnects without reinstalling it."""
+    key = await session.get(ApiKey, key_id)
+    if not key or key.tenant_id != current.tenant_id:
+        raise HTTPException(404, "key_not_found")
+    if key.revoked_at is not None:
+        key.revoked_at = None
+        session.add(
+            AuditLog(
+                action="key.reinstated",
+                tenant_id=current.tenant_id,
+                user_id=current.id,
+                resource=key.key_id,
+            )
+        )
+        await session.commit()
+    return ApiKeyOut(
+        id=key.id,
+        label=key.label,
+        key_id=key.key_id,
+        ip_allowlist=key.ip_allowlist,
+        last_used_at=key.last_used_at,
+        last_used_ip=str(key.last_used_ip) if key.last_used_ip else None,
+        created_at=key.created_at,
+        revoked_at=key.revoked_at,
+    )
 
 
 @router.get("/snapshots", response_model=list[SnapshotSummaryOut])
