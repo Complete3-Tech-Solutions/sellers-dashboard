@@ -368,10 +368,10 @@ tr:hover td{background:var(--primary-lightest)}
     <div id="keyCreateAlert" class="alert"></div>
     <div id="keyReveal" class="key-reveal">
       <div class="alert alert-info" style="display:block;margin-bottom:10px">
-        Copy this key now — it will <strong>never be shown again</strong>.
+        The key was downloaded as <strong>scc-agent-key.txt</strong>. For security it is
+        <strong>not shown on screen</strong> and can't be retrieved later — keep the file safe.
       </div>
-      <div class="key-box" id="keyRevealText"></div>
-      <button class="btn btn-ghost btn-sm" id="copyKeyBtn">Copy to clipboard</button>
+      <button class="btn btn-primary btn-sm" id="downloadKeyBtn">Download key file again</button>
     </div>
     <div id="keyCreateForm">
       <div class="field" style="margin-bottom:12px">
@@ -387,6 +387,54 @@ tr:hover td{background:var(--primary-lightest)}
         <button class="btn btn-ghost" data-close="newKeyModal">Cancel</button>
         <button class="btn btn-primary" id="createKeyBtn">Create key</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Rotate agent key modal -->
+<div class="modal-backdrop" id="rotateModal">
+  <div class="modal">
+    <button class="modal-close" data-close="rotateModal">×</button>
+    <h2>Rotate agent key</h2>
+    <div id="rotateAlert" class="alert"></div>
+    <p style="font-size:13px;color:var(--base-dark);margin-bottom:14px">
+      A new key is issued and downloaded; the current one is revoked immediately.
+      The agent stays offline until you install the new key on it.
+    </p>
+    <div class="field" style="margin-bottom:12px">
+      <label for="rotateLabel">Label <span style="font-weight:400;color:var(--base-dark)">(e.g. "Office PC - John")</span></label>
+      <input type="text" id="rotateLabel" maxlength="128" placeholder="My agent key" required>
+    </div>
+    <div class="field" style="margin-bottom:4px">
+      <label for="rotateIp">IP allowlist <span style="font-weight:400;color:var(--base-dark)">(optional)</span></label>
+      <input type="text" id="rotateIp" placeholder="192.168.1.10, 10.0.0.0/24">
+      <span class="hint">Comma-separated IPs. Leave blank to allow any IP.</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" data-close="rotateModal">Cancel</button>
+      <button class="btn btn-primary" id="rotateConfirmBtn">Rotate &amp; download</button>
+    </div>
+  </div>
+</div>
+
+<!-- Switch agent key modal -->
+<div class="modal-backdrop" id="switchModal">
+  <div class="modal">
+    <button class="modal-close" data-close="switchModal">×</button>
+    <h2>Switch active key</h2>
+    <div id="switchAlert" class="alert"></div>
+    <p style="font-size:13px;color:var(--base-dark);margin-bottom:14px">
+      Pick a key to make the <strong>only</strong> active one. No new key is downloaded —
+      the agent machine must already have the chosen key installed. Every other key is revoked.
+    </p>
+    <div class="field" style="margin-bottom:4px">
+      <label for="switchSelect">Key</label>
+      <select id="switchSelect"></select>
+      <span class="hint">Lists every key for this tenant. Revoked keys are reinstated when chosen.</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" data-close="switchModal">Cancel</button>
+      <button class="btn btn-primary" id="switchConfirmBtn">Make this the active key</button>
     </div>
   </div>
 </div>
@@ -497,11 +545,13 @@ async function loadMe(){
 }
 
 /* ── Agent connection ── */
+let agentKeys = [];
 async function loadAgent(){
   const body = $('agentBody');
   let keys = [];
   try { const r = await api('GET', '/api/admin/api-keys'); keys = r.ok ? await r.json() : []; }
   catch(_){ body.innerHTML='<div class="empty">Could not load.</div>'; return; }
+  agentKeys = keys;
   // The agent's key is the active (non-revoked) one, most recently used first.
   const active = keys.filter(k => !k.revoked_at)
     .sort((a,b)=> new Date(b.last_used_at||b.created_at) - new Date(a.last_used_at||a.created_at));
@@ -524,8 +574,47 @@ async function loadAgent(){
       <tr><th>Status</th><td>${connected}</td></tr>
     </table>
     <button class="btn btn-primary" id="rotateKeyBtn">Rotate key &amp; download new</button>
-    <p class="hint" style="margin-top:8px">Rotating cuts off the agent until you install the new key on it.</p>`;
-  $('rotateKeyBtn').addEventListener('click', () => rotateAgentKey(cur.id, cur.label));
+    ${keys.length > 1 ? '<button class="btn btn-ghost" id="switchKeyBtn" style="margin-left:8px">Switch to another key</button>' : ''}
+    <p class="hint" style="margin-top:8px">Rotating cuts off the agent until you install the new key on it. Switching makes a different existing key the active one (no download) — use it when the agent already has that key.</p>`;
+  $('rotateKeyBtn').addEventListener('click', () => openRotateModal(cur));
+  if(keys.length > 1) $('switchKeyBtn').addEventListener('click', () => openSwitchModal(cur));
+}
+
+function openSwitchModal(cur){
+  const sel = $('switchSelect');
+  sel.innerHTML = agentKeys.map(k => {
+    const status = k.revoked_at ? 'revoked' : 'active';
+    const used = k.last_used_at ? 'last sync '+fmt.date(k.last_used_at) : 'never used';
+    const current = k.id === cur.id ? ' — current' : '';
+    return `<option value="${k.id}">${escHtml(k.label)} · ${escHtml(k.key_id)} (${status}, ${used})${current}</option>`;
+  }).join('');
+  sel.value = cur.id;
+  hideAlert('switchAlert');
+  openModal('switchModal');
+}
+
+$('switchConfirmBtn').addEventListener('click', async () => {
+  const id = $('switchSelect').value;
+  const chosen = agentKeys.find(k => k.id === id);
+  if(!confirm(`Make "${chosen?chosen.label:id}" the only active key?\n\nEvery other key is revoked. The agent keeps working only if it already has THIS key installed.`)) return;
+  hideAlert('switchAlert');
+  $('switchConfirmBtn').disabled = true;
+  const r = await api('POST', '/api/admin/api-keys/'+id+'/activate');
+  $('switchConfirmBtn').disabled = false;
+  if(!r.ok){ const d=await r.json().catch(()=>({})); showAlert('switchAlert', d.detail||'Failed to switch key.'); return; }
+  closeModal('switchModal');
+  keysLoaded = false;
+  await loadAgent();
+  showAlert('agentAlert','Active key switched. All other keys are now revoked.','success');
+});
+
+let rotateKeyId = null;
+function openRotateModal(cur){
+  rotateKeyId = cur.id;
+  $('rotateLabel').value = cur.label || '';
+  $('rotateIp').value = (cur.ip_allowlist || []).join(', ');
+  hideAlert('rotateAlert');
+  openModal('rotateModal');
 }
 
 function downloadKeyFile(fullKey, label){
@@ -557,17 +646,23 @@ function downloadKeyFile(fullKey, label){
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
 }
 
-async function rotateAgentKey(id, label){
-  if(!confirm('Rotate the agent key?\n\nThe currently connected agent will STOP working until you install the new key on it. A .txt with the new key will download now.')) return;
-  hideAlert('agentAlert');
-  const r = await api('POST', '/api/admin/api-keys/'+id+'/rotate');
-  if(!r.ok){ const d=await r.json().catch(()=>({})); showAlert('agentAlert', d.detail||'Failed to rotate key.'); return; }
+$('rotateConfirmBtn').addEventListener('click', async () => {
+  const label = $('rotateLabel').value.trim();
+  if(!label){ showAlert('rotateAlert','Label is required.'); return; }
+  const rawIp = $('rotateIp').value.trim();
+  const ip_allowlist = rawIp ? rawIp.split(',').map(s=>s.trim()).filter(Boolean) : null;
+  hideAlert('rotateAlert');
+  $('rotateConfirmBtn').disabled = true;
+  const r = await api('POST', '/api/admin/api-keys/'+rotateKeyId+'/rotate', {label, ip_allowlist});
+  $('rotateConfirmBtn').disabled = false;
+  if(!r.ok){ const d=await r.json().catch(()=>({})); showAlert('rotateAlert', d.detail||'Failed to rotate key.'); return; }
   const data = await r.json();
   downloadKeyFile(data.full_key, data.label);
+  closeModal('rotateModal');
   keysLoaded = false;
   await loadAgent();
   showAlert('agentAlert','New key generated and downloaded (scc-agent-key.txt). Install it on the agent to reconnect.','success');
-}
+});
 
 async function generateAgentKey(){
   hideAlert('agentAlert');
@@ -597,8 +692,18 @@ async function loadKeys(){
       <td>${k.revoked_at
         ? '<span class="pill pill-red">Revoked</span>'
         : '<span class="pill pill-green">Active</span>'}</td>
-      <td>${k.revoked_at ? '' : `<button class="btn btn-danger btn-sm" onclick="revokeKey('${k.id}','${escHtml(k.label)}')">Revoke</button>`}</td>
+      <td>${k.revoked_at
+        ? `<button class="btn btn-ghost btn-sm" onclick="reinstateKey('${k.id}','${escHtml(k.label)}')">Reinstate</button>`
+        : `<button class="btn btn-danger btn-sm" onclick="revokeKey('${k.id}','${escHtml(k.label)}')">Revoke</button>`}</td>
     </tr>`).join('');
+}
+
+async function reinstateKey(id, label){
+  if(!confirm(`Reinstate key "${label}"? It becomes valid again with its original secret — any agent that still has this key will reconnect.`)) return;
+  hideAlert('keysAlert');
+  const r = await api('POST', '/api/admin/api-keys/'+id+'/reinstate');
+  if(r.ok){ keysLoaded=false; loadKeys(); showAlert('keysAlert','Key reinstated.','success'); }
+  else { const d=await r.json().catch(()=>({})); showAlert('keysAlert', d.detail||'Failed to reinstate key.'); }
 }
 
 async function revokeKey(id, label){
@@ -614,6 +719,7 @@ $('newKeyBtn').addEventListener('click', () => {
   $('keyReveal').style.display='none';
   $('keyLabel').value='';
   $('keyIp').value='';
+  lastCreatedKey = null;
   hideAlert('keyCreateAlert');
   openModal('newKeyModal');
 });
@@ -634,16 +740,15 @@ $('createKeyBtn').addEventListener('click', async () => {
   }
   const data = await r.json();
   $('keyCreateForm').style.display='none';
-  $('keyRevealText').textContent = data.full_key;
+  lastCreatedKey = {full_key:data.full_key, label:data.label};
+  downloadKeyFile(data.full_key, data.label);
   $('keyReveal').style.display='block';
   keysLoaded=false; loadKeys();
 });
 
-$('copyKeyBtn').addEventListener('click', () => {
-  navigator.clipboard.writeText($('keyRevealText').textContent).then(()=>{
-    $('copyKeyBtn').textContent='Copied!';
-    setTimeout(()=>{ $('copyKeyBtn').textContent='Copy to clipboard'; }, 2000);
-  });
+let lastCreatedKey = null;
+$('downloadKeyBtn').addEventListener('click', () => {
+  if(lastCreatedKey) downloadKeyFile(lastCreatedKey.full_key, lastCreatedKey.label);
 });
 
 /* ── Users ── */
