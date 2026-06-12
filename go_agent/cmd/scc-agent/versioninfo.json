@@ -1,0 +1,15 @@
+{
+	"FixedFileInfo": {
+		"FileVersion": { "Major": 0, "Minor": 2, "Patch": 0, "Build": 0 },
+		"ProductVersion": { "Major": 0, "Minor": 2, "Patch": 0, "Build": 0 }
+	},
+	"StringFileInfo": {
+		"CompanyName": "Complete3 Tech Solutions",
+		"FileDescription": "SCC Profitability Agent",
+		"ProductName": "SCC Profitability Agent",
+		"FileVersion": "0.2.0.0",
+		"ProductVersion": "0.2.0.0",
+		"InternalName": "scc-agent",
+		"OriginalFilename": "scc-agent.exe"
+	}
+}
