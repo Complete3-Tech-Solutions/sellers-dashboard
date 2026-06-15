@@ -22,8 +22,12 @@ class Syncer:
     def folder_hash(self) -> str:
         return hashlib.sha256(str(self.folder.resolve()).encode()).hexdigest()
 
-    def sync_once(self) -> dict:
-        """Compute the diff between disk and our recorded state; upload changes; commit a snapshot."""
+    def sync_once(self, force: bool = False) -> dict:
+        """Compute the diff between disk and our recorded state; upload changes; commit a snapshot.
+
+        When force is True (an admin-requested sync), every current file is
+        re-uploaded regardless of its recorded hash, so the server is guaranteed
+        to hold the latest data even if its state drifted from ours."""
         if not self._lock.acquire(blocking=False):
             log.debug("sync already running, skipping")
             return {"skipped": True}
@@ -33,7 +37,7 @@ class Syncer:
             for p in current_files:
                 h = sha256_file(p)
                 prev = self.store.get(p.name)
-                if prev is None or prev.sha256 != h:
+                if force or prev is None or prev.sha256 != h:
                     changed.append((p, h))
             current_names = {p.name for p in current_files}
             deleted = list(self.store.known_filenames() - current_names)

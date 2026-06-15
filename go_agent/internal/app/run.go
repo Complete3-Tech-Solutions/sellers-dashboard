@@ -31,7 +31,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	defer store.Close()
 
 	up := uploader.New(cfg.APIBaseURL)
-	syncer := syncpkg.New(cfg.WatchFolder, up, store)
+	syncer := syncpkg.New(cfg.WatchFolder, up, store, cfg.ExcludedFiles, cfg.IncludedFiles)
 
 	w := watcher.New(cfg.WatchFolder, secs(cfg.DebounceSecs), secs(cfg.PollInterval), func() {
 		if _, err := syncer.SyncOnce(false); err != nil {

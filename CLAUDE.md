@@ -10,7 +10,10 @@ uploads them. Deployed as **one Railway service** (backend serves both the API a
 the dashboard HTML). Postgres + Redis are Railway plugins.
 
 - **Backend + dashboard** → Railway (FastAPI · SQLAlchemy 2.0 async · Postgres · Redis)
-- **Agent** → ships to the customer's Windows PC (PyInstaller exe + NSSM service)
+- **Agent** → ships to the customer's Windows PC. Two implementations, same wire protocol:
+  - `agent/` (Python) — the original (PyInstaller exe + NSSM service).
+  - `go_agent/` (Go) — newer, **preferred for new installs**: one self-contained
+    `scc-agent.exe` that is installer + settings GUI + native service in a single binary.
 
 ## Repo layout
 
@@ -29,8 +32,12 @@ backend/app/
   seed_data.json     embedded 2013 dataset
 backend/alembic/     migrations (run on deploy: `alembic upgrade head`)
 dashboard/           static HTML served by the backend (index = dashboard, admin = admin panel)
-agent/scc_agent/     desktop agent: watcher → sync → uploader (HMAC-signed); creds in DPAPI
+agent/scc_agent/     desktop agent (Python): watcher → sync → uploader (HMAC-signed); creds in DPAPI
 agent/installer/     install.ps1 / uninstall.ps1 (NSSM service, --store-key for the API key)
+go_agent/            desktop agent (Go) — single self-contained scc-agent.exe:
+  cmd/scc-agent/       entrypoint: no-args→settings GUI (lxn/walk), run→service, install/uninstall
+  internal/            config, creds (DPAPI), state (modernc sqlite), uploader, watcher, sync,
+                       service (native Windows service), arp (Apps & features registration)
 ```
 
 ## Commands
@@ -47,8 +54,14 @@ ruff check app                         # lint (E,F,W,I,B,UP; E501 ignored; py312
 python -m app.seed                     # seed 2013 demo data + dev admin
 python -m app.seed_admin               # seed login users only (no demo data)
 
-# Agent (from agent/)
+# Agent — Python (from agent/)
 pip install -e '.[dev]' && pytest
+
+# Agent — Go (from go_agent/)
+go test ./...                          # unit tests
+make build                            # host binary (dev) → dist/scc-agent
+make windows                          # the single shipping exe → dist/scc-agent.exe
+# (cross-compiles from macOS/Linux; embeds UAC manifest, builds GUI-subsystem)
 ```
 
 After editing Python, byte-compile-check changed files: `python3 -m py_compile <files>`.
@@ -67,7 +80,24 @@ There is no Python on PATH as `python` here — use `python3`.
 - **Agent auth is one-directional.** The agent stores its key locally (`creds.bin`, DPAPI on
   Windows) and signs uploads with HMAC. **The server can never push to the agent** — it only
   receives. Any key change reaches the agent by re-installing the key on the agent machine
-  (`scc-agent.exe --store-key "<key>"`), not by the server reaching out.
+  (Python: `scc-agent.exe --store-key "<key>"`; Go: the settings GUI, or `scc-agent.exe
+  store-key "<key>"`), not by the server reaching out.
+- **Go agent specifics (`go_agent/`).** One `scc-agent.exe` does everything via subcommands:
+  double-click → auto-elevating settings GUI (embedded `requireAdministrator` manifest), SCM →
+  service, `uninstall` → headless full removal. The native Windows service is registered
+  Automatic (Delayed Start) with crash-recovery restart, and an Apps & features entry is added
+  so it uninstalls the standard Windows way. The GUI reopens (Start Menu/Desktop shortcut) as a
+  settings editor that rewrites `config.toml` and restarts the service. Wire protocol, HMAC
+  signing, and heartbeat behaviour are identical to the Python agent — only packaging differs.
+  CI: `.github/workflows/go-agent.yml` builds/signs/releases on `go-agent-v*` tags.
+- **Heartbeat + sync-on-demand (agent v0.2+).** The agent pings `POST /api/snapshot/heartbeat`
+  every `poll_interval` (default 30s); this stamps `api_keys.last_used_at` (the Agent page reads
+  it as "last seen" liveness) and returns whether an admin requested a sync. "Request sync now"
+  on the Agent page (`POST /api/admin/api-keys/{id}/request-sync`) sets a short-lived Redis flag
+  (`agent:sync_req:{key_id}`, 10-min TTL) that the next heartbeat consumes, triggering a forced
+  full re-upload (`sync_once(force=True)`). Still pull-based — the server never initiates a
+  connection. **Idle agents make no network calls** (a no-change `sync_once` returns early), so
+  liveness comes from the heartbeat, not from uploads.
 - **API key secrets.** Stored as a sha256 hash AND a Fernet ciphertext. The full key is only
   shown once, at create/rotate time. The Agent page never renders secrets on screen.
 - **Parser runs inline** at snapshot commit by default (`PARSER_INLINE=true`) so a single

@@ -132,7 +132,7 @@ func cmdInstall(args []string) int {
 		fmt.Fprintln(os.Stderr, "install requires -key and -watch")
 		return 2
 	}
-	if err := applySettings(*key, *watch, *url); err != nil {
+	if err := applySettings(*key, *watch, *url, nil, nil); err != nil {
 		fmt.Fprintln(os.Stderr, "install:", err)
 		return 1
 	}

@@ -564,8 +564,8 @@ async function loadAgent(){
     return;
   }
   const connected = cur.last_used_at
-    ? `<span class="pill pill-green">Connected</span> <span style="font-size:12px;color:var(--base-dark)">last sync ${fmt.date(cur.last_used_at)}${cur.last_used_ip?' from '+escHtml(cur.last_used_ip):''}</span>`
-    : `<span class="pill pill-yellow">Never used</span> <span style="font-size:12px;color:var(--base-dark)">no sync from this key yet</span>`;
+    ? `<span class="pill pill-green">Connected</span> <span style="font-size:12px;color:var(--base-dark)">last seen ${fmt.date(cur.last_used_at)}${cur.last_used_ip?' from '+escHtml(cur.last_used_ip):''}</span>`
+    : `<span class="pill pill-yellow">Never used</span> <span style="font-size:12px;color:var(--base-dark)">no contact from this key yet</span>`;
   body.innerHTML = `
     <table style="margin-bottom:16px">
       <tr><th style="width:130px">Label</th><td>${escHtml(cur.label)}</td></tr>
@@ -573,11 +573,83 @@ async function loadAgent(){
       <tr><th>IP allowlist</th><td>${cur.ip_allowlist?.length ? cur.ip_allowlist.map(escHtml).join(', ') : '<span style="color:var(--base)">any</span>'}</td></tr>
       <tr><th>Status</th><td>${connected}</td></tr>
     </table>
-    <button class="btn btn-primary" id="rotateKeyBtn">Rotate key &amp; download new</button>
+    <button class="btn btn-primary" id="reqSyncBtn">Request sync now</button>
+    <button class="btn btn-ghost" id="rotateKeyBtn" style="margin-left:8px">Rotate key &amp; download new</button>
     ${keys.length > 1 ? '<button class="btn btn-ghost" id="switchKeyBtn" style="margin-left:8px">Switch to another key</button>' : ''}
-    <p class="hint" style="margin-top:8px">Rotating cuts off the agent until you install the new key on it. Switching makes a different existing key the active one (no download) — use it when the agent already has that key.</p>`;
+    <p class="hint" style="margin-top:8px">Request sync asks the agent to check in and re-upload the latest data; it responds within one poll interval (~30s) if it's online. Rotating cuts off the agent until you install the new key on it. Switching makes a different existing key the active one (no download) — use it when the agent already has that key.</p>
+    <hr style="border:0;border-top:1px solid var(--base-lighter);margin:16px 0">
+    <button class="btn btn-danger" id="flushReloadBtn">Flush &amp; reload all data</button>
+    <p class="hint" style="margin-top:8px">Deletes every project and metric on the dashboard, then asks the agent to re-upload its entire folder from scratch. Use this to clear out stale years or fix a bad import. <strong>The dashboard is empty until the agent re-uploads</strong> (~30s if it's online).</p>`;
+  $('reqSyncBtn').addEventListener('click', () => requestSync(cur));
   $('rotateKeyBtn').addEventListener('click', () => openRotateModal(cur));
+  $('flushReloadBtn').addEventListener('click', () => flushReload(cur));
   if(keys.length > 1) $('switchKeyBtn').addEventListener('click', () => openSwitchModal(cur));
+}
+
+async function requestSync(cur){
+  const since = cur.last_used_at ? new Date(cur.last_used_at).getTime() : 0;
+  hideAlert('agentAlert');
+  $('reqSyncBtn').disabled = true;
+  const r = await api('POST', '/api/admin/api-keys/'+cur.id+'/request-sync');
+  if(!r.ok){
+    $('reqSyncBtn').disabled = false;
+    const d=await r.json().catch(()=>({})); showAlert('agentAlert', d.detail||'Failed to request sync.'); return;
+  }
+  showAlert('agentAlert','Sync requested — waiting for the agent to check in (up to ~60s)…','info');
+  const deadline = Date.now() + 60000;
+  const poll = async () => {
+    let keys = [];
+    try { const rr = await api('GET','/api/admin/api-keys'); keys = rr.ok ? await rr.json() : []; } catch(_){}
+    const k = keys.find(x => x.id === cur.id);
+    const seen = k && k.last_used_at ? new Date(k.last_used_at).getTime() : 0;
+    if(seen > since){
+      agentKeys = keys;
+      await loadAgent();
+      showAlert('agentAlert','Agent responded — connection is active and it is syncing the latest data. ✓','success');
+      return;
+    }
+    if(Date.now() < deadline){ setTimeout(poll, 3000); return; }
+    showAlert('agentAlert',"No response from the agent within 60s. It may be offline, or this key isn't installed on the agent machine.");
+    const btn = $('reqSyncBtn'); if(btn) btn.disabled = false;
+  };
+  setTimeout(poll, 3000);
+}
+
+async function flushReload(cur){
+  if(!confirm("Flush ALL dashboard data and re-import everything from the agent?\n\n• Every project and metric is deleted now.\n• The agent is asked to re-upload its entire folder.\n• The dashboard stays empty until that re-upload finishes (~30s if the agent is online; longer or never if it's offline).\n\nContinue?")) return;
+  hideAlert('agentAlert');
+  const btn = $('flushReloadBtn');
+  btn.disabled = true;
+  const since = cur.last_used_at ? new Date(cur.last_used_at).getTime() : 0;
+  const r = await api('POST', '/api/admin/data/flush-reload');
+  if(!r.ok){
+    btn.disabled = false;
+    const d = await r.json().catch(()=>({}));
+    showAlert('agentAlert', d.detail || 'Failed to flush data.'); return;
+  }
+  const d = await r.json().catch(()=>({}));
+  if(!d.agents_signaled){
+    showAlert('agentAlert','Data flushed, but no active agent key is connected to re-upload. Install/connect the agent, then use "Request sync now".');
+    return;
+  }
+  showAlert('agentAlert','Data flushed — waiting for the agent to re-upload everything (up to ~60s)…','info');
+  const deadline = Date.now() + 60000;
+  const poll = async () => {
+    let keys = [];
+    try { const rr = await api('GET','/api/admin/api-keys'); keys = rr.ok ? await rr.json() : []; } catch(_){}
+    const k = keys.find(x => x.id === cur.id);
+    const seen = k && k.last_used_at ? new Date(k.last_used_at).getTime() : 0;
+    if(seen > since){
+      agentKeys = keys;
+      await loadAgent();
+      showAlert('agentAlert','Agent responded and is re-uploading the full dataset. The dashboard will refill once parsing completes. ✓','success');
+      return;
+    }
+    if(Date.now() < deadline){ setTimeout(poll, 3000); return; }
+    showAlert('agentAlert',"Data was flushed, but the agent hasn't checked in within 60s. It may be offline — the dashboard stays empty until it reconnects and re-uploads.");
+    const b = $('flushReloadBtn'); if(b) b.disabled = false;
+  };
+  setTimeout(poll, 3000);
 }
 
 function openSwitchModal(cur){

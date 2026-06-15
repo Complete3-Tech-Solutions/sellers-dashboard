@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -21,14 +22,55 @@ import (
 )
 
 type Syncer struct {
-	folder string
-	up     *uploader.Uploader
-	store  *state.Store
-	mu     sync.Mutex
+	folder   string
+	up       *uploader.Uploader
+	store    *state.Store
+	excluded map[string]bool
+	included map[string]bool
+	mu       sync.Mutex
 }
 
-func New(folder string, up *uploader.Uploader, store *state.Store) *Syncer {
-	return &Syncer{folder: folder, up: up, store: store}
+func New(folder string, up *uploader.Uploader, store *state.Store, excluded, included []string) *Syncer {
+	toSet := func(names []string) map[string]bool {
+		s := make(map[string]bool, len(names))
+		for _, name := range names {
+			s[name] = true
+		}
+		return s
+	}
+	return &Syncer{folder: folder, up: up, store: store, excluded: toSet(excluded), included: toSet(included)}
+}
+
+// candidates returns the absolute paths the syncer should upload: the watch
+// folder's pattern-matched files plus any explicit includes that exist there,
+// minus the excluded set. Sorted for deterministic snapshots.
+func (s *Syncer) candidates() ([]string, error) {
+	files, err := watcher.ListXLSX(s.folder)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool, len(files))
+	var out []string
+	for _, p := range files {
+		name := filepath.Base(p)
+		if s.excluded[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, p)
+	}
+	for name := range s.included {
+		if s.excluded[name] || seen[name] {
+			continue
+		}
+		p := filepath.Join(s.folder, name)
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			seen[name] = true
+			out = append(out, p)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 type Result struct {
@@ -57,7 +99,7 @@ func (s *Syncer) SyncOnce(force bool) (*Result, error) {
 	}
 	defer s.mu.Unlock()
 
-	files, err := watcher.ListXLSX(s.folder)
+	files, err := s.candidates()
 	if err != nil {
 		return nil, err
 	}
@@ -67,6 +109,8 @@ func (s *Syncer) SyncOnce(force bool) (*Result, error) {
 	current := make(map[string]bool, len(files))
 	for _, p := range files {
 		name := filepath.Base(p)
+		// Files outside the candidate set (excluded, or no longer present) fall
+		// into the deleted set below, so a previously-sent one is removed.
 		current[name] = true
 		h, err := uploader.SHA256File(p)
 		if err != nil {

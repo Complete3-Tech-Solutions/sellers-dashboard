@@ -26,7 +26,7 @@ const (
 // GUI and the `install` CLI command. A blank key keeps the stored one. On a
 // fresh machine it registers the service, shortcuts, and Apps & features entry;
 // when already installed it just rewrites config and restarts the service.
-func applySettings(key, folder, url string) error {
+func applySettings(key, folder, url string, excluded, included []string) error {
 	if folder == "" {
 		return fmt.Errorf("choose a watch folder")
 	}
@@ -41,7 +41,7 @@ func applySettings(key, folder, url string) error {
 		return err
 	}
 
-	if err := config.WriteConfig(url, folder); err != nil {
+	if err := config.WriteConfig(url, folder, excluded, included); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}
 	if key != "" {
