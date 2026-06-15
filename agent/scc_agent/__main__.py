@@ -40,6 +40,23 @@ def cmd_store_key(full_key: str) -> int:
     return 0
 
 
+def _heartbeat_loop(uploader, syncer, interval: float, stop_evt: threading.Event) -> None:
+    """Ping the server every `interval` seconds for liveness and to pick up
+    admin-requested syncs. Failures are non-fatal — the agent keeps watching."""
+    while not stop_evt.wait(interval):
+        try:
+            resp = uploader.heartbeat()
+        except Exception:
+            log.debug("heartbeat failed", exc_info=True)
+            continue
+        if resp.get("sync"):
+            log.info("server requested an on-demand sync")
+            try:
+                syncer.sync_once(force=True)
+            except Exception:
+                log.exception("requested sync failed")
+
+
 def cmd_run(config_path: pathlib.Path | None) -> int:
     ensure_dirs()
     cfg = load_config(config_path) if config_path else load_config()
@@ -72,6 +89,13 @@ def cmd_run(config_path: pathlib.Path | None) -> int:
         pass
 
     watcher.start()
+    hb = threading.Thread(
+        target=_heartbeat_loop,
+        args=(uploader, syncer, cfg.poll_interval, stop_evt),
+        daemon=True,
+        name="scc-heartbeat",
+    )
+    hb.start()
     # Run an initial sync so we don't wait for the first edit
     try:
         syncer.sync_once()

@@ -240,6 +240,42 @@ body.has-fullscreen{overflow:hidden}
     </span>
   </div>
 </div>
+<style>
+.view-tabs{display:inline-flex;border:1px solid #c9c9c9;border-radius:6px;overflow:hidden;height:38px}
+.view-tabs .view-tab{appearance:none;border:0;background:#fff;color:#3d4551;padding:0 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;line-height:36px}
+.view-tabs .view-tab+.view-tab{border-left:1px solid #c9c9c9}
+.view-tabs .view-tab:hover{background:#f0f0f0}
+.view-tabs .view-tab.active{background:#005ea2;color:#fff}
+.view-completion{display:none}
+body[data-view="completion"] .view-financials{display:none!important}
+body[data-view="completion"] .view-completion{display:block}
+.comp-stats{padding:4px 2px}
+.comp-row{display:flex;justify-content:space-between;align-items:center;padding:10px 4px;border-bottom:1px solid #eef0f2;font-size:14px}
+.comp-row:last-child{border-bottom:0}
+.comp-row>span:first-child{color:#565c65}
+.comp-row .v{font-family:'Roboto Mono',monospace;font-weight:700;color:#1b1b1b;font-size:15px}
+.comp-row .v.big{font-size:20px;color:#005ea2}
+.status-filter{display:inline-flex;gap:6px}
+.status-filter .chip{appearance:none;border:1px solid #c9c9c9;background:#fff;color:#3d4551;padding:5px 13px;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+.status-filter .chip.active{background:#162e51;color:#fff;border-color:#162e51}
+.status-badge{display:inline-block;padding:2px 10px;border-radius:11px;font-size:11px;font-weight:700;white-space:nowrap}
+.status-badge.done{background:#ecf3ec;color:#216e1f}
+.status-badge.wip{background:#faf3d1;color:#936f38}
+.data-overlay{display:none;min-height:55vh;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px;padding:48px 24px}
+body.data-pending .data-overlay{display:flex}
+body.data-pending .view-financials,body.data-pending .view-completion{display:none!important}
+.data-spinner{width:46px;height:46px;border:4px solid #d9e8f6;border-top-color:#005ea2;border-radius:50%;animation:dataspin .9s linear infinite}
+@keyframes dataspin{to{transform:rotate(360deg)}}
+.data-overlay .data-icon{font-size:44px;line-height:1}
+.data-overlay h2{margin:0;font-size:21px;color:#162e51}
+.data-overlay p{margin:0;max-width:460px;color:#565c65;font-size:14px;line-height:1.55}
+.data-overlay .retry-btn{margin-top:6px;background:#005ea2;color:#fff;border:0;border-radius:4px;padding:10px 22px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+.data-overlay .retry-btn:hover{background:#1a4480}
+.admin-only{display:none!important}
+body.is-admin .admin-only{display:inline-flex!important}
+.overlay-admin-link{margin-top:12px;color:#005ea2;font-weight:600;font-size:13px;text-decoration:none}
+.overlay-admin-link:hover{text-decoration:underline}
+</style>
 <header class="masthead">
   <div class="masthead-inner">
     <div class="brand-block">
@@ -254,13 +290,12 @@ body.has-fullscreen{overflow:hidden}
         <label for="yearSelect">Fiscal Year</label>
         <select class="year-select" id="yearSelect"></select>
       </div>
-      <div class="year-control" title="Accounting mode: Raw matches the spreadsheet (multi-year projects double-count); POC scales by % complete; Closeout only includes finished projects.">
-        <label for="accountingSelect">Accounting</label>
-        <select class="year-select" id="accountingSelect">
-          <option value="raw">Raw (spreadsheet)</option>
-          <option value="poc">% Complete</option>
-          <option value="closeout">Closeout only</option>
-        </select>
+      <div class="year-control" title="Financials = the spreadsheet's own profit & overhead totals. Completion = each job's realized vs in-progress status.">
+        <label>View</label>
+        <div class="view-tabs" role="tablist" aria-label="Dashboard view">
+          <button type="button" class="view-tab active" data-view="financials" role="tab" aria-selected="true">Financials</button>
+          <button type="button" class="view-tab" data-view="completion" role="tab" aria-selected="false">Completion</button>
+        </div>
       </div>
       <button type="button" id="exportPdfBtn" class="export-btn" title="Export full report as PDF">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -284,7 +319,8 @@ body.has-fullscreen{overflow:hidden}
   </div>
 </section>
 <main class="container">
-  <div class="kpi-grid">
+  <div id="dataOverlay" class="data-overlay"></div>
+  <div class="kpi-grid view-financials">
     <div class="kpi"><div class="kpi-label">Total Sales</div><div class="kpi-value" id="kpi-sales">—</div><div class="kpi-delta">Invoiced revenue</div></div>
     <div class="kpi success"><div class="kpi-label">Gross Profit</div><div class="kpi-value" id="kpi-gp">—</div><div class="kpi-delta"><strong id="kpi-gp-pct">—</strong> gross margin</div></div>
     <div class="kpi warning"><div class="kpi-label">Total Overhead</div><div class="kpi-value" id="kpi-oh">—</div><div class="kpi-delta"><strong id="kpi-oh-pct">—</strong> of sales</div></div>
@@ -292,7 +328,7 @@ body.has-fullscreen{overflow:hidden}
     <div class="kpi info"><div class="kpi-label">Active Job #s</div><div class="kpi-value" id="kpi-proj">—</div><div class="kpi-delta"><strong id="kpi-proj-done">—</strong> completed</div></div>
     <div class="kpi"><div class="kpi-label">Avg Contract</div><div class="kpi-value" id="kpi-avg">—</div><div class="kpi-delta">per active job</div></div>
   </div>
-  <section class="section">
+  <section class="section view-financials">
     <div class="section-head"><div class="section-title">Quarterly Performance</div><div class="section-meta">Q1 → Q4</div></div>
     <div class="q-grid" id="qCards"></div>
     <div class="grid grid-3">
@@ -301,7 +337,7 @@ body.has-fullscreen{overflow:hidden}
       <div class="card"><div class="card-head"><div class="card-title">Margin Trends</div><div class="card-tag">% of sales</div></div><div class="card-sub">Gross, overhead, and net margin per quarter</div><div class="chart-wrap"><canvas id="qMarginChart"></canvas></div></div>
     </div>
   </section>
-  <section class="section">
+  <section class="section view-financials">
     <div class="section-head"><div class="section-title">Monthly Trends</div><div class="section-meta">Jan → Dec</div></div>
     <div class="grid grid-2">
       <div class="card"><div class="card-head"><div class="card-title">Monthly P&amp;L Trend</div><div class="card-tag">12-month</div></div><div class="card-sub">Gross profit, overhead, and net profit per month</div><div class="chart-wrap tall"><canvas id="mTrendChart"></canvas></div></div>
@@ -313,7 +349,7 @@ body.has-fullscreen{overflow:hidden}
       <div class="card"><div class="card-head"><div class="card-title">Net Profit by Month</div><div class="card-tag">Profit / Loss</div></div><div class="card-sub">Green = profit month, red = loss month</div><div class="chart-wrap tall"><canvas id="mNetChart"></canvas></div></div>
     </div>
   </section>
-  <section class="section">
+  <section class="section view-financials">
     <div class="section-head"><div class="section-title">Project Analytics — by Job #</div><div class="section-meta">Portfolio breakdown</div></div>
     <div class="grid grid-2">
       <div class="card"><div class="card-head"><div class="card-title">Top 10 Job #s by Contract Value</div><div class="card-tag">Largest</div></div><div class="card-sub">Highest-revenue projects in the portfolio</div><div class="chart-wrap xtall"><canvas id="topContractChart"></canvas></div></div>
@@ -334,7 +370,7 @@ body.has-fullscreen{overflow:hidden}
       -->
     </div>
   </section>
-  <section class="section">
+  <section class="section view-financials">
     <div class="section-head"><div class="section-title">Project Register</div><div class="section-meta" id="tableCount">—</div></div>
     <div class="table-wrap">
       <div class="table-controls">
@@ -362,6 +398,55 @@ body.has-fullscreen{overflow:hidden}
             -->
           </tr></thead>
           <tbody id="projTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+  <section class="section view-completion">
+    <div class="section-head"><div class="section-title">Project Completion — Fiscal Year <span id="comp-year">—</span></div><div class="section-meta">Completed vs in-progress</div></div>
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-head"><div class="card-title">Completed Jobs</div><div class="card-tag">Realized</div></div>
+        <div class="card-sub">Finished projects (100%) — actual booked figures, each counted once</div>
+        <div class="comp-stats" id="compCompleted"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title">In Progress</div><div class="card-tag">Pipeline</div></div>
+        <div class="card-sub">Open projects — full projected value, weighted by % complete</div>
+        <div class="comp-stats" id="compInProgress"></div>
+      </div>
+    </div>
+    <div style="height:14px"></div>
+    <div class="grid grid-2">
+      <div class="card"><div class="card-head"><div class="card-title">Completion Status</div><div class="card-tag">% Compl</div></div><div class="card-sub">Job # count by completion band</div><div class="chart-wrap tall"><canvas id="completionViewPie"></canvas></div></div>
+      <div class="card"><div class="card-head"><div class="card-title">Earned vs Remaining Backlog</div><div class="card-tag">Contract $</div></div><div class="card-sub">In-progress contract value: earned to date vs remaining backlog</div><div class="chart-wrap tall"><canvas id="backlogChart"></canvas></div></div>
+    </div>
+  </section>
+  <section class="section view-completion">
+    <div class="section-head"><div class="section-title">Projects by Status</div><div class="section-meta" id="compTableCount">—</div></div>
+    <div class="table-wrap">
+      <div class="table-controls">
+        <input type="text" class="search-input" id="compSearchInput" placeholder="Search by Job # or project name…">
+        <div class="table-stats">
+          <span class="status-filter">
+            <button type="button" class="chip active" data-status="all">All</button>
+            <button type="button" class="chip" data-status="completed">Completed</button>
+            <button type="button" class="chip" data-status="inprogress">In Progress</button>
+          </span>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table id="compTable">
+          <thead><tr>
+            <th>Job #</th>
+            <th>Project Name</th>
+            <th class="num">% Compl</th>
+            <th class="num">Contract</th>
+            <th class="num">Profit</th>
+            <th class="num">Earned-to-date</th>
+            <th>Status</th>
+          </tr></thead>
+          <tbody id="compTableBody"></tbody>
         </table>
       </div>
     </div>
@@ -446,6 +531,7 @@ let DATA = {};
 let YEARS = [];
 let currentYear = null;
 let currentAccounting = 'raw';
+let currentView = 'financials';
 
 async function api(url, opts){
   const r = await fetch(url, Object.assign({credentials:'include'}, opts || {}));
@@ -482,7 +568,12 @@ async function loadYear(year){
 async function loadSession(){
   try {
     const me = await api('/auth/me');
-    if (me?.role === 'admin') document.getElementById('adminLink').style.display = '';
+    if (me?.role === 'admin'){
+      document.getElementById('adminLink').style.display = '';
+      // Body flag so the admin link is present in every state (incl. the
+      // loading / empty / error overlays), regardless of when this resolves.
+      document.body.classList.add('is-admin');
+    }
   } catch (_) { /* 401 already redirects to /login */ }
 }
 
@@ -492,13 +583,102 @@ document.getElementById('logoutLink').addEventListener('click', async (e) => {
   window.location = '/login';
 });
 
-async function bootstrap(){
+/* ── Data load states: loading / importing / empty(offline) / error / ready ── */
+let dataPollTimer = null;
+let dataPollCount = 0;
+const DATA_POLL_INTERVAL = 5000;
+const DATA_POLL_MAX = 36; // ~3 min before falling back to the offline/empty screen
+
+function stopDataPoll(){ if (dataPollTimer){ clearTimeout(dataPollTimer); dataPollTimer = null; } }
+
+const adminLinkHTML = '<a href="/admin" class="admin-only overlay-admin-link">⚙️ Open the Admin Panel</a>';
+
+function setDataState(state, opts){
+  opts = opts || {};
+  const ov = document.getElementById('dataOverlay');
+  if (state === 'ready'){
+    document.body.classList.remove('data-pending');
+    ov.innerHTML = '';
+    return;
+  }
+  document.body.classList.add('data-pending');
+  if (state === 'loading'){
+    ov.innerHTML = '<div class="data-spinner"></div><h2>Loading data…</h2>'
+      + '<p>Fetching the latest profitability data.</p>';
+  } else if (state === 'importing'){
+    ov.innerHTML = '<div class="data-spinner"></div><h2>Waiting for data…</h2>'
+      + '<p>The agent is re-importing your job-cost files. This page updates automatically as soon as the data arrives — usually within a minute.</p>';
+  } else if (state === 'empty'){
+    ov.innerHTML = '<div class="data-icon">📭</div><h2>No data available yet</h2>'
+      + '<p>' + (opts.msg || 'No dashboard data has arrived. The agent may be offline or still starting up — data will appear here automatically once it uploads.') + '</p>'
+      + '<button class="retry-btn" id="dataRetryBtn">Check again</button>';
+  } else { // error
+    ov.innerHTML = '<div class="data-icon">⚠️</div><h2>Couldn\'t load the dashboard</h2>'
+      + '<p>' + (opts.msg || 'Something went wrong loading your data.') + '</p>'
+      + '<button class="retry-btn" id="dataRetryBtn">Retry</button>';
+  }
+  // Admins always get a way into the admin panel, in every state.
+  ov.innerHTML += adminLinkHTML;
+  const retry = document.getElementById('dataRetryBtn');
+  if (retry) retry.addEventListener('click', () => bootstrap());
+}
+
+function isNoData(e){ return !!(e && /^api_404$/.test(e.message || '')); }
+function dataErrMsg(e){
+  const m = (e && e.message) || '';
+  if (/^api_5/.test(m)) return 'The server hit a problem (HTTP ' + m.replace('api_','') + '). Please try again in a moment.';
+  if (m === 'unauthorized') return 'Your session expired — redirecting to sign in…';
+  return 'Could not reach the server. Check your connection and retry.';
+}
+
+function scheduleDataPoll(){
+  stopDataPoll();
+  if (dataPollCount >= DATA_POLL_MAX){
+    setDataState('empty');
+    return;
+  }
+  dataPollTimer = setTimeout(pollForData, DATA_POLL_INTERVAL);
+}
+
+async function pollForData(){
+  dataPollCount++;
   try {
-    loadSession();
     const def = await fetchYears();
-    if (def != null) await loadYear(def);
+    if (def != null){
+      await loadYear(def);
+      setDataState('ready');
+      stopDataPoll();
+      return;
+    }
   } catch (e) {
-    console.error('dashboard boot failed', e);
+    if (!isNoData(e)){ /* transient network/server hiccup — keep waiting */ }
+  }
+  scheduleDataPoll();
+}
+
+async function bootstrap(){
+  stopDataPoll();
+  dataPollCount = 0;
+  setDataState('loading');
+  loadSession();
+  let def;
+  try {
+    def = await fetchYears();
+  } catch (e) {
+    setDataState('error', {msg: dataErrMsg(e)});
+    return;
+  }
+  if (def == null){
+    setDataState('importing');
+    scheduleDataPoll();
+    return;
+  }
+  try {
+    await loadYear(def);
+    setDataState('ready');
+  } catch (e) {
+    if (isNoData(e)){ setDataState('importing'); scheduleDataPoll(); }
+    else { setDataState('error', {msg: dataErrMsg(e)}); }
   }
 }
 let currentSort = {key:'job', dir:1};
@@ -561,6 +741,11 @@ function renderYear(year){
   currentYear = year;
   document.getElementById('hero-year').textContent = year;
   const d = DATA[year];
+  if (currentView === 'completion'){ renderCompletionView(d); return; }
+  renderFinancials(d);
+}
+
+function renderFinancials(d){
   // dv = same shape as d but quarterly/monthly trimmed to current quarter for current year
   const dv = Object.assign({}, d, visibleSlice(d));
   renderKPIs(d); renderQuarterCards(dv); clearCharts();
@@ -570,6 +755,118 @@ function renderYear(year){
   renderSizePieChart(d); renderCompletePieChart(d); renderMarginBandChart(d); renderParetoChart(d);
   renderScatterChart(d); /* renderCashChart(d) — BILLING HIDDEN: see data_issue.md */
   renderTable(d);
+}
+
+/* ---- Completion view (View 2): completed vs in-progress, all facts ---- */
+const COMPLETE_T = 0.999;
+let compStatusFilter = 'all';
+let compSearch = '';
+
+function compSum(arr, f){ return arr.reduce((a,p)=>a+(f(p)||0),0); }
+function compIsComplete(p){ return p.pct_compl != null && p.pct_compl >= COMPLETE_T; }
+function compStatRows(pairs){
+  return pairs.map(([k,v,big])=>`<div class="comp-row"><span>${k}</span><span class="v${big?' big':''}">${v}</span></div>`).join('');
+}
+
+function renderCompletionView(d){
+  clearCharts();
+  document.getElementById('comp-year').textContent = currentYear;
+  const completed = d.projects.filter(compIsComplete);
+  const inprog = d.projects.filter(p => !compIsComplete(p));
+
+  const cContract = compSum(completed, p=>p.contract);
+  const cProfit = compSum(completed, p=>p.profit);
+  document.getElementById('compCompleted').innerHTML = compStatRows([
+    ['Completed jobs', completed.length, true],
+    ['Realized contract', fmt$full(cContract)],
+    ['Realized profit', fmt$full(cProfit)],
+    ['Avg margin', fmtPct(cContract ? cProfit/cContract : 0)],
+  ]);
+
+  const pContract = compSum(inprog, p=>p.contract);
+  const earned = compSum(inprog, p=>(p.contract||0)*(p.pct_compl||0));
+  const pProfit = compSum(inprog, p=>p.profit);
+  document.getElementById('compInProgress').innerHTML = compStatRows([
+    ['In-progress jobs', inprog.length, true],
+    ['Total contract', fmt$full(pContract)],
+    ['Weighted % complete', fmtPct(pContract ? earned/pContract : 0)],
+    ['Earned to date', fmt$full(earned)],
+    ['Remaining backlog', fmt$full(pContract - earned)],
+    ['Projected profit', fmt$full(pProfit)],
+  ]);
+
+  renderCompletionPie(d);
+  renderBacklogChart(earned, pContract - earned);
+  renderCompTable(d);
+}
+
+function renderCompletionPie(d){
+  const bands = [
+    {label:'Complete (100%)', count:0, color:C.success},
+    {label:'In Progress (50–99%)', count:0, color:C.warning},
+    {label:'Started (1–49%)', count:0, color:C.accentWarm},
+    {label:'Not Started (0%)', count:0, color:C.base}
+  ];
+  d.projects.forEach(p => {
+    const c = p.pct_compl || 0;
+    if (c >= COMPLETE_T) bands[0].count++;
+    else if (c >= 0.5) bands[1].count++;
+    else if (c > 0) bands[2].count++;
+    else bands[3].count++;
+  });
+  charts.completionPie = new Chart(document.getElementById('completionViewPie'), {
+    type:'doughnut',
+    data:{labels:bands.map(b=>b.label),
+      datasets:[{data:bands.map(b=>b.count), backgroundColor:bands.map(b=>b.color), borderColor:'#fff', borderWidth:2}]},
+    options:{maintainAspectRatio:false, responsive:true,
+      plugins:{legend:{position:'bottom', labels:{padding:10, font:{size:11}}},
+        tooltip:{callbacks:{label:(c)=>c.label+': '+c.parsed+' Job #s'}}}}
+  });
+}
+
+function renderBacklogChart(earned, remaining){
+  charts.backlog = new Chart(document.getElementById('backlogChart'), {
+    type:'doughnut',
+    data:{labels:['Earned to date','Remaining backlog'],
+      datasets:[{data:[Math.max(0,earned), Math.max(0,remaining)],
+        backgroundColor:[C.primary, C.baseLighter], borderColor:'#fff', borderWidth:2}]},
+    options:{maintainAspectRatio:false, responsive:true,
+      plugins:{legend:{position:'bottom', labels:{padding:10, font:{size:11}}},
+        tooltip:{callbacks:{label:(c)=>c.label+': '+fmt$full(c.parsed)}}}}
+  });
+}
+
+function compRows(d){
+  let rows = d.projects.map(p => {
+    const done = compIsComplete(p);
+    return {job:p.job, name:p.name, pct_compl:p.pct_compl,
+      contract:p.contract, profit:p.profit,
+      earned: done ? (p.contract||0) : (p.contract||0)*(p.pct_compl||0),
+      done};
+  });
+  if (compStatusFilter === 'completed') rows = rows.filter(r=>r.done);
+  else if (compStatusFilter === 'inprogress') rows = rows.filter(r=>!r.done);
+  if (compSearch){
+    const q = compSearch.toLowerCase();
+    rows = rows.filter(r => String(r.job).toLowerCase().includes(q) || String(r.name||'').toLowerCase().includes(q));
+  }
+  rows.sort((a,b)=>(b.contract||0)-(a.contract||0));
+  return rows;
+}
+
+function renderCompTable(d){
+  const rows = compRows(d);
+  document.getElementById('compTableCount').textContent = rows.length + ' projects';
+  document.getElementById('compTableBody').innerHTML = rows.map(r=>`
+    <tr>
+      <td>${fmtJob(r.job)}</td>
+      <td>${r.name||''}</td>
+      <td class="num">${r.pct_compl==null?'—':(r.pct_compl*100).toFixed(0)+'%'}</td>
+      <td class="num">${fmt$full(r.contract)}</td>
+      <td class="num">${fmt$full(r.profit)}</td>
+      <td class="num">${fmt$full(r.earned)}</td>
+      <td><span class="status-badge ${r.done?'done':'wip'}">${r.done?'Completed':'In Progress'}</span></td>
+    </tr>`).join('');
 }
 
 function renderKPIs(d){
@@ -942,12 +1239,41 @@ document.getElementById('searchInput').addEventListener('input', (e) => {
 });
 
 const yearSel = document.getElementById('yearSelect');
-yearSel.addEventListener('change', () => loadYear(yearSel.value));
+yearSel.addEventListener('change', async () => {
+  try {
+    await loadYear(yearSel.value);
+    setDataState('ready');
+  } catch (e) {
+    if (isNoData(e)){ setDataState('importing'); scheduleDataPoll(); }
+    else { setDataState('error', {msg: dataErrMsg(e)}); }
+  }
+});
 
-const accSel = document.getElementById('accountingSelect');
-accSel.addEventListener('change', () => {
-  currentAccounting = accSel.value;
-  if (currentYear != null) loadYear(currentYear);
+document.querySelectorAll('.view-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const v = btn.dataset.view;
+    if (v === currentView) return;
+    currentView = v;
+    document.querySelectorAll('.view-tab').forEach(b => {
+      const on = b === btn;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    document.body.dataset.view = v;
+    if (currentYear != null) renderYear(currentYear);
+  });
+});
+
+document.getElementById('compSearchInput').addEventListener('input', (e) => {
+  compSearch = e.target.value;
+  if (currentYear != null) renderCompTable(DATA[currentYear]);
+});
+document.querySelectorAll('.status-filter .chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    compStatusFilter = chip.dataset.status;
+    document.querySelectorAll('.status-filter .chip').forEach(c => c.classList.toggle('active', c === chip));
+    if (currentYear != null) renderCompTable(DATA[currentYear]);
+  });
 });
 
 const today = new Date().toISOString().slice(0,10);
@@ -1025,6 +1351,10 @@ document.addEventListener('keydown', (e) => {
 
 async function exportPDF(){
   const btn = document.getElementById('exportPdfBtn');
+  if (document.body.classList.contains('data-pending')){
+    alert('No data to export yet — the dashboard is still loading.');
+    return;
+  }
   if (!window.jspdf || !window.html2canvas){
     alert('PDF libraries are still loading — please try again in a moment.');
     return;
@@ -1132,10 +1462,11 @@ async function exportPDF(){
 
     const pieces = [];
     const kpi = document.querySelector('.kpi-grid');
-    if (kpi) pieces.push({label:'Key Performance Indicators', el:kpi});
+    if (kpi && kpi.offsetParent !== null) pieces.push({label:'Key Performance Indicators', el:kpi});
     document.querySelectorAll('main.container > .section').forEach(s => {
+      if (s.offsetParent === null) return; // skip the hidden view
       const t = (s.querySelector('.section-title') && s.querySelector('.section-title').textContent) || 'Section';
-      if (/project register/i.test(t)) return;
+      if (/project register|projects by status/i.test(t)) return;
       pieces.push({label:t, el:s});
     });
 

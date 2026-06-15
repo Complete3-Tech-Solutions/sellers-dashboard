@@ -117,6 +117,13 @@ class Uploader:
         r.raise_for_status()
         return r.json()
 
+    def heartbeat(self) -> dict:
+        """Ping the server (signed, empty body) to report liveness and learn
+        whether an admin has requested an on-demand sync."""
+        r = self._signed("POST", "/api/snapshot/heartbeat")
+        r.raise_for_status()
+        return r.json()
+
 
 def sha256_file(path: pathlib.Path) -> str:
     h = hashlib.sha256()

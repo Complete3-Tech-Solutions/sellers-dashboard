@@ -112,6 +112,24 @@ async def verify_agent(
     return AgentAuth(api_key=api_key, ip=ip)
 
 
+def sync_request_key(key_id: str) -> str:
+    return f"agent:sync_req:{key_id}"
+
+
+@router.post("/heartbeat")
+async def heartbeat(
+    auth: AgentAuth = Depends(verify_agent),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Agent liveness ping. verify_agent has already stamped last_used_at /
+    last_used_ip (the dashboard reads these as 'last seen'); commit it. Returns
+    whether an admin has requested an on-demand sync since the last ping."""
+    await session.commit()
+    r = get_redis()
+    requested = await r.delete(sync_request_key(auth.api_key.key_id))
+    return {"sync": bool(requested)}
+
+
 def _r2_key(tenant_id: uuid.UUID, snapshot_id: uuid.UUID, filename: str) -> str:
     return f"tenants/{tenant_id}/snapshots/{snapshot_id}/{filename}"
 

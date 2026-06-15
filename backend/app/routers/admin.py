@@ -4,12 +4,25 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from sqlalchemy import desc, func, select, update
+from sqlalchemy import delete, desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.deps import CurrentUser, require_admin
-from app.models import ApiKey, AuditLog, RefreshToken, Snapshot, Tenant, User
+from app.models import (
+    ApiKey,
+    AuditLog,
+    MonthlyMetric,
+    OverheadDetail,
+    Project,
+    QuarterlyMetric,
+    RefreshToken,
+    Snapshot,
+    Tenant,
+    User,
+)
+from app.redis_client import get_redis
+from app.routers.ingest import sync_request_key
 from app.schemas.admin import (
     ApiKeyCreateIn,
     ApiKeyCreateOut,
@@ -234,6 +247,80 @@ async def reinstate_api_key(
         created_at=key.created_at,
         revoked_at=key.revoked_at,
     )
+
+
+@router.post("/api-keys/{key_id}/request-sync")
+async def request_agent_sync(
+    key_id: uuid.UUID,
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Queue an on-demand sync for the agent holding this key. The server can't
+    push, so this sets a short-lived flag the agent picks up on its next
+    heartbeat (within one poll interval) and then re-uploads the latest data."""
+    key = await session.get(ApiKey, key_id)
+    if not key or key.tenant_id != current.tenant_id:
+        raise HTTPException(404, "key_not_found")
+    if key.revoked_at is not None:
+        raise HTTPException(409, "key_revoked")
+    r = get_redis()
+    await r.set(sync_request_key(key.key_id), "1", ex=600)
+    session.add(
+        AuditLog(
+            action="agent.sync_requested",
+            tenant_id=current.tenant_id,
+            user_id=current.id,
+            resource=key.key_id,
+        )
+    )
+    await session.commit()
+    return {"ok": True}
+
+
+@router.post("/data/flush-reload")
+async def flush_and_reload(
+    current: CurrentUser = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Wipe all dashboard data for the tenant and ask the agent(s) to re-upload
+    the entire dataset. The server can't push, so this sets the same short-lived
+    force-sync flag as 'Request sync now' on every active key; the next heartbeat
+    triggers a full re-upload (sync_once(force=True)) which the parser applies.
+    The dashboard is empty until that re-upload lands (~30s if the agent is online)."""
+    tid = current.tenant_id
+    deleted = 0
+    for model in (Project, MonthlyMetric, QuarterlyMetric, OverheadDetail):
+        res = await session.execute(delete(model).where(model.tenant_id == tid))
+        deleted += res.rowcount or 0
+
+    keys = (
+        await session.execute(
+            select(ApiKey).where(
+                ApiKey.tenant_id == tid, ApiKey.revoked_at.is_(None)
+            )
+        )
+    ).scalars().all()
+    r = get_redis()
+    for key in keys:
+        await r.set(sync_request_key(key.key_id), "1", ex=600)
+
+    # Drop cached dashboard payloads so the empty state shows immediately.
+    try:
+        async for k in r.scan_iter(match=f"dashboard:{tid}:*"):
+            await r.delete(k)
+    except Exception:
+        pass
+
+    session.add(
+        AuditLog(
+            action="data.flush_reload",
+            tenant_id=tid,
+            user_id=current.id,
+            meta={"deleted_rows": deleted, "agents_signaled": len(keys)},
+        )
+    )
+    await session.commit()
+    return {"ok": True, "deleted_rows": deleted, "agents_signaled": len(keys)}
 
 
 @router.get("/snapshots", response_model=list[SnapshotSummaryOut])

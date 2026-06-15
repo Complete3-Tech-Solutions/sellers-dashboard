@@ -1,0 +1,101 @@
+name: go-agent
+
+on:
+  push:
+    tags: ["go-agent-v*"]
+  pull_request:
+    paths:
+      - "go_agent/**"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to stamp (e.g. 0.2.0)"
+        required: false
+        default: "0.0.0-dev"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: go_agent
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache-dependency-path: go_agent/go.sum
+
+      - name: Derive version
+        id: ver
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/go-agent-v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/go-agent-v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ github.event.inputs.version || '0.0.0-dev' }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Vet & test
+        run: |
+          go vet ./...
+          go test ./...
+
+      - name: Embed manifest (UAC + common controls)
+        run: >
+          go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@latest
+          -64 -manifest cmd/scc-agent/manifest.xml
+          -o cmd/scc-agent/resource_windows_amd64.syso
+          cmd/scc-agent/versioninfo.json
+
+      - name: Build single Windows exe
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: >
+          go build
+          -ldflags "-s -w -H windowsgui -X github.com/complete3tech/scc-agent/internal/version.Version=${{ steps.ver.outputs.version }}"
+          -o dist/scc-agent.exe ./cmd/scc-agent
+
+      # Optional Authenticode signing — runs only if the cert secrets are set.
+      - name: Sign exe
+        if: ${{ secrets.WINDOWS_CERT_PFX_BASE64 != '' }}
+        shell: pwsh
+        env:
+          PFX_B64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          PFX_PASS: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\cert.pfx", [Convert]::FromBase64String($env:PFX_B64))
+          $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1).FullName
+          & $signtool sign /f "$env:RUNNER_TEMP\cert.pfx" /p $env:PFX_PASS `
+            /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 dist\scc-agent.exe
+          & $signtool verify /pa dist\scc-agent.exe
+
+      - name: Package release zip
+        if: startsWith(github.ref, 'refs/tags/go-agent-v')
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Copy-Item dist\scc-agent.exe release\
+          Copy-Item installer\install.ps1 release\
+          Copy-Item installer\uninstall.ps1 release\
+          Copy-Item README.md release\
+          Compress-Archive -Path release\* -DestinationPath "scc-agent-${{ github.ref_name }}.zip"
+
+      - name: Upload build artifact (every run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: scc-agent-windows-amd64
+          path: go_agent/dist/scc-agent.exe
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/go-agent-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            go_agent/scc-agent-${{ github.ref_name }}.zip
+            go_agent/dist/scc-agent.exe
