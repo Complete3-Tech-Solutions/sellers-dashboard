@@ -40,6 +40,14 @@ func applySettings(key, folder, url string, excluded, included []string) error {
 	if err != nil {
 		return err
 	}
+	// Two-exe layout: shortcuts / Apps-&-features point at the GUI installer
+	// (scc-agent-setup.exe) when it's present alongside this exe, else fall back
+	// to whatever launched us.
+	dir := filepath.Dir(exe)
+	guiExe := filepath.Join(dir, "scc-agent-setup.exe")
+	if _, e := os.Stat(guiExe); e != nil {
+		guiExe = exe
+	}
 
 	if err := config.WriteConfig(url, folder, excluded, included); err != nil {
 		return fmt.Errorf("write config: %w", err)
@@ -63,17 +71,24 @@ func applySettings(key, folder, url string, excluded, included []string) error {
 		return nil
 	}
 
-	if err := service.Install(exe); err != nil {
+	// The service must run the plain console binary (scc-agent.exe), never the
+	// GUI/admin setup exe — the Service Control Manager cannot start a
+	// requireAdministrator, GUI-subsystem binary. They ship side by side.
+	serviceExe := filepath.Join(dir, "scc-agent.exe")
+	if _, e := os.Stat(serviceExe); e != nil {
+		return fmt.Errorf("scc-agent.exe not found next to the installer (looked in %s)", dir)
+	}
+	if err := service.Install(serviceExe); err != nil {
 		return fmt.Errorf("register service: %w", err)
 	}
-	createShortcuts(exe)
+	createShortcuts(guiExe)
 	_ = arp.Register(arp.Info{
 		DisplayName:     "SCC Profitability Agent",
 		DisplayVersion:  version.Version,
 		Publisher:       publisher,
-		InstallLocation: filepath.Dir(exe),
-		DisplayIcon:     exe,
-		UninstallString: fmt.Sprintf("%q uninstall", exe),
+		InstallLocation: dir,
+		DisplayIcon:     guiExe,
+		UninstallString: fmt.Sprintf("%q uninstall", guiExe),
 	})
 	return nil
 }
