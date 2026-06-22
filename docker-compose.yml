@@ -2,25 +2,43 @@ services:
   db:
     image: postgres:16
     environment:
-      POSTGRES_USER: scc
-      POSTGRES_PASSWORD: dev
-      POSTGRES_DB: scc
+      POSTGRES_USER: ${POSTGRES_USER:-scc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev}
+      POSTGRES_DB: ${POSTGRES_DB:-scc}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U scc"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-scc}"]
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    ports:
+      # Bound to localhost only — your existing reverse proxy (nginx/traefik/caddy)
+      # forwards to 127.0.0.1:8000. Never expose this port publicly.
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
 
 volumes:
   pgdata:
